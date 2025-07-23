@@ -262,3 +262,11 @@ This project is open source and available under the MIT License.
 ## Support
 
 For issues or questions, please create an issue in the project repository. 
+## Output Directory
+
+The project includes an `output/` directory for organizing generated files:
+
+- **HTML files** are automatically excluded from Git via `.gitignore`
+- **Recommended usage**: Save HTML output to `output/` directory
+- **Example**: `output/family_analysis.html`
+- **Benefits**: Keeps project root clean and organized
