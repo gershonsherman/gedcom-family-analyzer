@@ -1,0 +1,468 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME John /Smith/
+2 GIVN John
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 1980
+2 PLAC New York, NY
+1 FAMS @F1@
+1 FAMC @F2@
+0 @I2@ INDI
+1 NAME Mary /Johnson/
+2 GIVN Mary
+2 SURN Johnson
+1 SEX F
+1 BIRT
+2 DATE 1955
+2 PLAC Boston, MA
+1 FAMS @F2@
+1 FAMC @F3@
+0 @I3@ INDI
+1 NAME Robert /Smith/
+2 GIVN Robert
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 1950
+2 PLAC Chicago, IL
+1 DEAT
+2 DATE 2010
+2 PLAC Chicago, IL
+1 FAMS @F2@
+1 FAMC @F4@
+0 @I4@ INDI
+1 NAME Sarah /Smith/
+2 GIVN Sarah
+2 SURN Smith
+1 SEX F
+1 BIRT
+2 DATE 2005
+2 PLAC New York, NY
+1 FAMC @F1@
+0 @I5@ INDI
+1 NAME Michael /Smith/
+2 GIVN Michael
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 2008
+2 PLAC New York, NY
+1 FAMC @F1@
+0 @I6@ INDI
+1 NAME Jennifer /Smith/
+2 GIVN Jennifer
+2 SURN Smith
+1 SEX F
+1 BIRT
+2 DATE 1982
+2 PLAC New York, NY
+1 FAMC @F2@
+0 @I7@ INDI
+1 NAME David /Johnson/
+2 GIVN David
+2 SURN Johnson
+1 SEX M
+1 BIRT
+2 DATE 1981
+2 PLAC Boston, MA
+1 FAMC @F5@
+0 @I8@ INDI
+1 NAME Lisa /Johnson/
+2 GIVN Lisa
+2 SURN Johnson
+1 SEX F
+1 BIRT
+2 DATE 1983
+2 PLAC Boston, MA
+1 FAMC @F5@
+0 @I9@ INDI
+1 NAME Thomas /Johnson/
+2 GIVN Thomas
+2 SURN Johnson
+1 SEX M
+1 BIRT
+2 DATE 1985
+2 PLAC Boston, MA
+1 FAMC @F5@
+0 @I10@ INDI
+1 NAME Emma /Wilson/
+2 GIVN Emma
+2 SURN Wilson
+1 SEX F
+1 BIRT
+2 DATE 1990
+2 PLAC Boston, MA
+1 FAMC @F6@
+0 @I11@ INDI
+1 NAME William /Johnson/
+2 GIVN William
+2 SURN Johnson
+1 SEX M
+1 BIRT
+2 DATE 1925
+2 PLAC Boston, MA
+1 DEAT
+2 DATE 1995
+2 PLAC Boston, MA
+1 FAMS @F3@
+1 FAMC @F7@
+0 @I12@ INDI
+1 NAME Elizabeth /Brown/
+2 GIVN Elizabeth
+2 SURN Brown
+1 SEX F
+1 BIRT
+2 DATE 1930
+2 PLAC Boston, MA
+1 FAMS @F3@
+1 FAMC @F8@
+0 @I13@ INDI
+1 NAME James /Smith/
+2 GIVN James
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 1920
+2 PLAC Chicago, IL
+1 DEAT
+2 DATE 1985
+2 PLAC Chicago, IL
+1 FAMS @F4@
+1 FAMC @F9@
+0 @I14@ INDI
+1 NAME Patricia /Davis/
+2 GIVN Patricia
+2 SURN Davis
+1 SEX F
+1 BIRT
+2 DATE 1925
+2 PLAC Chicago, IL
+1 FAMS @F4@
+1 FAMC @F10@
+0 @I15@ INDI
+1 NAME Richard /Johnson/
+2 GIVN Richard
+2 SURN Johnson
+1 SEX M
+1 BIRT
+2 DATE 1950
+2 PLAC Boston, MA
+1 FAMS @F5@
+1 FAMC @F3@
+0 @I16@ INDI
+1 NAME Susan /Miller/
+2 GIVN Susan
+2 SURN Miller
+1 SEX F
+1 BIRT
+2 DATE 1952
+2 PLAC Boston, MA
+1 FAMS @F5@
+1 FAMC @F11@
+0 @I17@ INDI
+1 NAME George /Wilson/
+2 GIVN George
+2 SURN Wilson
+1 SEX M
+1 BIRT
+2 DATE 1960
+2 PLAC Boston, MA
+1 FAMS @F6@
+1 FAMC @F12@
+0 @I18@ INDI
+1 NAME Nancy /Taylor/
+2 GIVN Nancy
+2 SURN Taylor
+1 SEX F
+1 BIRT
+2 DATE 1962
+2 PLAC Boston, MA
+1 FAMS @F6@
+1 FAMC @F13@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I19@
+1 CHIL @I4@
+1 CHIL @I5@
+1 MARR
+2 DATE 2000
+2 PLAC New York, NY
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I2@
+1 CHIL @I1@
+1 CHIL @I6@
+1 MARR
+2 DATE 1975
+2 PLAC New York, NY
+0 @F3@ FAM
+1 HUSB @I11@
+1 WIFE @I12@
+1 CHIL @I2@
+1 CHIL @I15@
+1 MARR
+2 DATE 1950
+2 PLAC Boston, MA
+0 @F4@ FAM
+1 HUSB @I13@
+1 WIFE @I14@
+1 CHIL @I3@
+1 MARR
+2 DATE 1945
+2 PLAC Chicago, IL
+0 @F5@ FAM
+1 HUSB @I15@
+1 WIFE @I16@
+1 CHIL @I7@
+1 CHIL @I8@
+1 CHIL @I9@
+1 MARR
+2 DATE 1975
+2 PLAC Boston, MA
+0 @F6@ FAM
+1 HUSB @I17@
+1 WIFE @I18@
+1 CHIL @I10@
+1 MARR
+2 DATE 1985
+2 PLAC Boston, MA
+0 @I19@ INDI
+1 NAME Jane /Doe/
+2 GIVN Jane
+2 SURN Doe
+1 SEX F
+1 BIRT
+2 DATE 1982
+2 PLAC New York, NY
+1 FAMS @F1@
+1 FAMC @F14@
+0 @F7@ FAM
+1 HUSB @I20@
+1 WIFE @I21@
+1 CHIL @I11@
+1 MARR
+2 DATE 1920
+2 PLAC Boston, MA
+0 @F8@ FAM
+1 HUSB @I22@
+1 WIFE @I23@
+1 CHIL @I12@
+1 MARR
+2 DATE 1925
+2 PLAC Boston, MA
+0 @F9@ FAM
+1 HUSB @I24@
+1 WIFE @I25@
+1 CHIL @I13@
+1 MARR
+2 DATE 1915
+2 PLAC Chicago, IL
+0 @F10@ FAM
+1 HUSB @I26@
+1 WIFE @I27@
+1 CHIL @I14@
+1 MARR
+2 DATE 1920
+2 PLAC Chicago, IL
+0 @F11@ FAM
+1 HUSB @I28@
+1 WIFE @I29@
+1 CHIL @I16@
+1 MARR
+2 DATE 1970
+2 PLAC Boston, MA
+0 @F12@ FAM
+1 HUSB @I30@
+1 WIFE @I31@
+1 CHIL @I17@
+1 MARR
+2 DATE 1980
+2 PLAC Boston, MA
+0 @F13@ FAM
+1 HUSB @I32@
+1 WIFE @I33@
+1 CHIL @I18@
+1 MARR
+2 DATE 1980
+2 PLAC Boston, MA
+0 @F14@ FAM
+1 HUSB @I34@
+1 WIFE @I35@
+1 CHIL @I19@
+1 MARR
+2 DATE 1960
+2 PLAC New York, NY
+0 @I20@ INDI
+1 NAME Charles /Johnson/
+2 GIVN Charles
+2 SURN Johnson
+1 SEX M
+1 BIRT
+2 DATE 1895
+2 PLAC Boston, MA
+1 DEAT
+2 DATE 1970
+2 PLAC Boston, MA
+1 FAMS @F7@
+0 @I21@ INDI
+1 NAME Margaret /Clark/
+2 GIVN Margaret
+2 SURN Clark
+1 SEX F
+1 BIRT
+2 DATE 1900
+2 PLAC Boston, MA
+1 DEAT
+2 DATE 1975
+2 PLAC Boston, MA
+1 FAMS @F7@
+0 @I22@ INDI
+1 NAME Henry /Brown/
+2 GIVN Henry
+2 SURN Brown
+1 SEX M
+1 BIRT
+2 DATE 1900
+2 PLAC Boston, MA
+1 DEAT
+2 DATE 1980
+2 PLAC Boston, MA
+1 FAMS @F8@
+0 @I23@ INDI
+1 NAME Alice /White/
+2 GIVN Alice
+2 SURN White
+1 SEX F
+1 BIRT
+2 DATE 1905
+2 PLAC Boston, MA
+1 DEAT
+2 DATE 1985
+2 PLAC Boston, MA
+1 FAMS @F8@
+0 @I24@ INDI
+1 NAME Frank /Smith/
+2 GIVN Frank
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 1890
+2 PLAC Chicago, IL
+1 DEAT
+2 DATE 1965
+2 PLAC Chicago, IL
+1 FAMS @F9@
+0 @I25@ INDI
+1 NAME Helen /Martin/
+2 GIVN Helen
+2 SURN Martin
+1 SEX F
+1 BIRT
+2 DATE 1895
+2 PLAC Chicago, IL
+1 DEAT
+2 DATE 1970
+2 PLAC Chicago, IL
+1 FAMS @F9@
+0 @I26@ INDI
+1 NAME Edward /Davis/
+2 GIVN Edward
+2 SURN Davis
+1 SEX M
+1 BIRT
+2 DATE 1895
+2 PLAC Chicago, IL
+1 DEAT
+2 DATE 1975
+2 PLAC Chicago, IL
+1 FAMS @F10@
+0 @I27@ INDI
+1 NAME Ruth /Anderson/
+2 GIVN Ruth
+2 SURN Anderson
+1 SEX F
+1 BIRT
+2 DATE 1900
+2 PLAC Chicago, IL
+1 DEAT
+2 DATE 1980
+2 PLAC Chicago, IL
+1 FAMS @F10@
+0 @I28@ INDI
+1 NAME Paul /Miller/
+2 GIVN Paul
+2 SURN Miller
+1 SEX M
+1 BIRT
+2 DATE 1945
+2 PLAC Boston, MA
+1 FAMS @F11@
+0 @I29@ INDI
+1 NAME Carol /Thompson/
+2 GIVN Carol
+2 SURN Thompson
+1 SEX F
+1 BIRT
+2 DATE 1947
+2 PLAC Boston, MA
+1 FAMS @F11@
+0 @I30@ INDI
+1 NAME Steven /Wilson/
+2 GIVN Steven
+2 SURN Wilson
+1 SEX M
+1 BIRT
+2 DATE 1955
+2 PLAC Boston, MA
+1 FAMS @F12@
+0 @I31@ INDI
+1 NAME Diane /Harris/
+2 GIVN Diane
+2 SURN Harris
+1 SEX F
+1 BIRT
+2 DATE 1957
+2 PLAC Boston, MA
+1 FAMS @F12@
+0 @I32@ INDI
+1 NAME Kevin /Taylor/
+2 GIVN Kevin
+2 SURN Taylor
+1 SEX M
+1 BIRT
+2 DATE 1955
+2 PLAC Boston, MA
+1 FAMS @F13@
+0 @I33@ INDI
+1 NAME Laura /Garcia/
+2 GIVN Laura
+2 SURN Garcia
+1 SEX F
+1 BIRT
+2 DATE 1957
+2 PLAC Boston, MA
+1 FAMS @F13@
+0 @I34@ INDI
+1 NAME Robert /Doe/
+2 GIVN Robert
+2 SURN Doe
+1 SEX M
+1 BIRT
+2 DATE 1935
+2 PLAC New York, NY
+1 FAMS @F14@
+0 @I35@ INDI
+1 NAME Barbara /Lee/
+2 GIVN Barbara
+2 SURN Lee
+1 SEX F
+1 BIRT
+2 DATE 1940
+2 PLAC New York, NY
+1 FAMS @F14@
+0 TRLR 
