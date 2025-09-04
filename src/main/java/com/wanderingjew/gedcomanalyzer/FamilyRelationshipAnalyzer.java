@@ -31,13 +31,17 @@ public class FamilyRelationshipAnalyzer {
     }
     
     private void getAncestorsRecursive(Person person, Set<Person> ancestors, int maxGenerations) {
-        if (person == null || (maxGenerations > 0 && ancestors.size() >= maxGenerations)) {
+        getAncestorsRecursive(person, ancestors, maxGenerations, 0);
+    }
+    
+    private void getAncestorsRecursive(Person person, Set<Person> ancestors, int maxGenerations, int currentGeneration) {
+        if (person == null || (maxGenerations > 0 && currentGeneration >= maxGenerations)) {
             return;
         }
         
         for (Person parent : person.getParents()) {
             if (ancestors.add(parent)) {
-                getAncestorsRecursive(parent, ancestors, maxGenerations);
+                getAncestorsRecursive(parent, ancestors, maxGenerations, currentGeneration + 1);
             }
         }
     }
@@ -61,13 +65,17 @@ public class FamilyRelationshipAnalyzer {
     }
     
     private void getDescendantsRecursive(Person person, Set<Person> descendants, int maxGenerations) {
-        if (person == null || (maxGenerations > 0 && descendants.size() >= maxGenerations)) {
+        getDescendantsRecursive(person, descendants, maxGenerations, 0);
+    }
+    
+    private void getDescendantsRecursive(Person person, Set<Person> descendants, int maxGenerations, int currentGeneration) {
+        if (person == null || (maxGenerations > 0 && currentGeneration >= maxGenerations)) {
             return;
         }
         
         for (Person child : person.getChildren()) {
             if (descendants.add(child)) {
-                getDescendantsRecursive(child, descendants, maxGenerations);
+                getDescendantsRecursive(child, descendants, maxGenerations, currentGeneration + 1);
             }
         }
     }

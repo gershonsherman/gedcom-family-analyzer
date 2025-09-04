@@ -1,5 +1,6 @@
 package com.wanderingjew.gedcomanalyzer;
 
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -50,16 +51,30 @@ public class GedcomFamilyAnalyzer {
             GedcomData gedcomData;
             
             if (gedcomFiles.contains(",")) {
-                // Multiple files
-                String[] filePaths = gedcomFiles.split(",");
+                // Multiple files - first strip outer quotes from entire string
+                String cleanedFiles = gedcomFiles.trim();
+                if (cleanedFiles.startsWith("\"") && cleanedFiles.endsWith("\"")) {
+                    cleanedFiles = cleanedFiles.substring(1, cleanedFiles.length() - 1);
+                }
+                
+                String[] filePaths = cleanedFiles.split(",");
                 List<String> fileList = new ArrayList<>();
                 for (String filePath : filePaths) {
-                    fileList.add(filePath.trim());
+                    // Remove surrounding quotes and trim whitespace
+                    String cleanedPath = filePath.trim();
+                    if (cleanedPath.startsWith("\"") && cleanedPath.endsWith("\"")) {
+                        cleanedPath = cleanedPath.substring(1, cleanedPath.length() - 1);
+                    }
+                    fileList.add(cleanedPath);
                 }
                 gedcomData = parser.parseMultipleFiles(fileList);
             } else {
-                // Single file
-                gedcomData = parser.parseFile(gedcomFiles);
+                // Single file - also need to strip quotes
+                String cleanedFile = gedcomFiles.trim();
+                if (cleanedFile.startsWith("\"") && cleanedFile.endsWith("\"")) {
+                    cleanedFile = cleanedFile.substring(1, cleanedFile.length() - 1);
+                }
+                gedcomData = parser.parseFile(cleanedFile);
             }
             
             System.out.println("Found " + gedcomData.getPersonCount() + " persons and " + gedcomData.getFamilyCount() + " families.");
@@ -84,10 +99,12 @@ public class GedcomFamilyAnalyzer {
             
             // Generate output
             if (htmlOutputFile != null) {
-                generateHtmlOutput(analyzer, targetPerson, gedcomFiles, personId, htmlOutputFile);
+                // Ensure output directory exists
+                ensureOutputDirectoryExists(htmlOutputFile);
+                generateHtmlOutput(analyzer, targetPerson, gedcomFiles, personId, htmlOutputFile, gedcomData);
                 System.out.println("HTML output written to: " + htmlOutputFile);
             } else {
-                displayConsoleOutput(analyzer, targetPerson);
+                displayConsoleOutput(analyzer, targetPerson, gedcomData);
             }
             
         } catch (Exception e) {
@@ -97,14 +114,14 @@ public class GedcomFamilyAnalyzer {
         }
     }
     
-    private void displayConsoleOutput(FamilyRelationshipAnalyzer analyzer, Person targetPerson) {
+    private void displayConsoleOutput(FamilyRelationshipAnalyzer analyzer, Person targetPerson, GedcomData gedcomData) {
         displayAncestors(analyzer, targetPerson);
         displayDescendants(analyzer, targetPerson);
         displaySiblings(analyzer, targetPerson);
-        displayCousins(analyzer, targetPerson);
+        displayCousins(analyzer, targetPerson, gedcomData);
     }
     
-    private void generateHtmlOutput(FamilyRelationshipAnalyzer analyzer, Person targetPerson, String gedcomFile, String personId, String htmlOutputFile) throws IOException {
+    private void generateHtmlOutput(FamilyRelationshipAnalyzer analyzer, Person targetPerson, String gedcomFile, String personId, String htmlOutputFile, GedcomData gedcomData) throws IOException {
         try (PrintWriter writer = new PrintWriter(new FileWriter(htmlOutputFile))) {
             writer.println("<!DOCTYPE html>");
             writer.println("<html lang=\"en\">");
@@ -159,7 +176,7 @@ public class GedcomFamilyAnalyzer {
             // Cousins
             writer.println("    <div class=\"section\">");
             writer.println("        <h2>COUSINS</h2>");
-            writeCousinsHtml(analyzer, targetPerson, writer);
+            writeCousinsHtml(analyzer, targetPerson, writer, gedcomData);
             writer.println("    </div>");
             
             writer.println("</body>");
@@ -249,25 +266,38 @@ public class GedcomFamilyAnalyzer {
         }
     }
     
-    private void writeCousinsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
+    private void writeCousinsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer, GedcomData gedcomData) {
         boolean foundAnyCousins = false;
         for (int degree = 1; degree <= 6; degree++) {
             Map<String, List<Person>> groupedCousins = analyzer.getCousinsGroupedByFamily(targetPerson, degree);
             if (!groupedCousins.isEmpty()) {
                 foundAnyCousins = true;
                 String degreeText = degree == 1 ? "1st" : degree == 2 ? "2nd" : degree == 3 ? "3rd" : degree + "th";
-                writer.println("        <h3>" + degreeText + " Cousins</h3>");
+                
+                // Calculate total count for this degree
+                int totalCount = 0;
+                for (List<Person> cousins : groupedCousins.values()) {
+                    totalCount += cousins.size();
+                }
+                
+                writer.println("        <h3>" + degreeText + " Cousins (" + totalCount + ")</h3>");
                 
                 for (Map.Entry<String, List<Person>> entry : groupedCousins.entrySet()) {
                     String familyId = entry.getKey();
                     List<Person> cousins = entry.getValue();
                     
+                    // Get family display name
+                    String familyDisplayName = "Family " + familyId;
+                    if (gedcomData.getFamily(familyId) != null) {
+                        familyDisplayName = gedcomData.getFamily(familyId).getDisplayName();
+                    }
+                    
                     if (cousins.size() > 1) {
                         writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
-                        writer.println("            <strong>Family " + familyId + " (" + cousins.size() + " cousins):</strong>");
+                        writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + " (" + cousins.size() + " cousins):</strong>");
                     } else {
                         writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
-                        writer.println("            <strong>Family " + familyId + ":</strong>");
+                        writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + ":</strong>");
                     }
                     
                     for (Person cousin : cousins) {
@@ -372,7 +402,7 @@ public class GedcomFamilyAnalyzer {
     /**
      * Display cousins of the target person (1st through 6th cousins).
      */
-    private void displayCousins(FamilyRelationshipAnalyzer analyzer, Person targetPerson) {
+    private void displayCousins(FamilyRelationshipAnalyzer analyzer, Person targetPerson, GedcomData gedcomData) {
         System.out.println("COUSINS:");
         System.out.println("--------");
         
@@ -382,16 +412,29 @@ public class GedcomFamilyAnalyzer {
             if (!groupedCousins.isEmpty()) {
                 foundAnyCousins = true;
                 String degreeText = getDegreeText(degree);
-                System.out.println(degreeText + " Cousins:");
+                
+                // Calculate total count for this degree
+                int totalCount = 0;
+                for (List<Person> cousins : groupedCousins.values()) {
+                    totalCount += cousins.size();
+                }
+                
+                System.out.println(degreeText + " Cousins (" + totalCount + "):");
                 
                 for (Map.Entry<String, List<Person>> entry : groupedCousins.entrySet()) {
                     String familyId = entry.getKey();
                     List<Person> cousins = entry.getValue();
                     
+                    // Get family display name
+                    String familyDisplayName = "Family " + familyId;
+                    if (gedcomData.getFamily(familyId) != null) {
+                        familyDisplayName = gedcomData.getFamily(familyId).getDisplayName();
+                    }
+                    
                     if (cousins.size() > 1) {
-                        System.out.println("  Family " + familyId + " (" + cousins.size() + " cousins):");
+                        System.out.println("  Children of " + familyDisplayName + " (" + cousins.size() + " cousins):");
                     } else {
-                        System.out.println("  Family " + familyId + ":");
+                        System.out.println("  Children of " + familyDisplayName + ":");
                     }
                     
                     for (Person cousin : cousins) {
@@ -423,6 +466,18 @@ public class GedcomFamilyAnalyzer {
             case 5: return "5TH";
             case 6: return "6TH";
             default: return degree + "TH";
+        }
+    }
+    
+    /**
+     * Ensures the output directory exists for the given file path.
+     * Creates any necessary parent directories.
+     */
+    private void ensureOutputDirectoryExists(String filePath) {
+        File file = new File(filePath);
+        File parentDir = file.getParentFile();
+        if (parentDir != null && !parentDir.exists()) {
+            parentDir.mkdirs();
         }
     }
 } 

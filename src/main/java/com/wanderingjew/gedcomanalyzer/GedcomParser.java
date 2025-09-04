@@ -74,9 +74,10 @@ public class GedcomParser {
                 if (level == 0) {
                     if (id != null) {
                         currentId = id;
-                        // Check if this ID already exists - if so, skip this record
+                        // Check if this ID already exists
                         if (persons.containsKey(currentId) || families.containsKey(currentId)) {
-                            skipCurrentRecord = true;
+                            // Record exists, but we'll merge additional data if it's incomplete
+                            skipCurrentRecord = false;
                         } else {
                             skipCurrentRecord = false;
                             if (tag.equals("INDI")) {

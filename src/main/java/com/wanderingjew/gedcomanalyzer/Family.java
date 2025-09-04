@@ -90,6 +90,37 @@ public class Family {
         
         return info.toString();
     }
+    
+    /**
+     * Get a display name for this family based on the parents.
+     */
+    public String getDisplayName() {
+        StringBuilder name = new StringBuilder();
+        
+        if (husband != null && husband.getDisplayName() != null && !husband.getDisplayName().trim().isEmpty()) {
+            name.append(husband.getDisplayName());
+        } else if (husbandId != null) {
+            name.append("Husband ").append(husbandId);
+        }
+        
+        if (wife != null && wife.getDisplayName() != null && !wife.getDisplayName().trim().isEmpty()) {
+            if (name.length() > 0) {
+                name.append(" & ");
+            }
+            name.append(wife.getDisplayName());
+        } else if (wifeId != null) {
+            if (name.length() > 0) {
+                name.append(" & ");
+            }
+            name.append("Wife ").append(wifeId);
+        }
+        
+        if (name.length() == 0) {
+            name.append("Family ").append(id);
+        }
+        
+        return name.toString();
+    }
 
     /**
      * Get the spouse of a given person in this family.
