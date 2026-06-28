@@ -337,7 +337,12 @@ public class FamilyRelationshipAnalyzer {
                 for (Person cousin : uncleAunt.getChildren()) {
                     // Group by the family where the cousin is a child
                     for (String familyId : cousin.getFamilyIdsAsChild()) {
-                        groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>()).add(cousin);
+                        List<Person> familyCousins = groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>());
+                        // Avoid duplicates (e.g. two brothers marrying two sisters makes
+                        // the same cousin reachable via both a paternal and maternal sibling)
+                        if (!familyCousins.contains(cousin)) {
+                            familyCousins.add(cousin);
+                        }
                     }
                 }
             }
@@ -365,7 +370,12 @@ public class FamilyRelationshipAnalyzer {
                         for (Person cousin : firstCousinParent.getChildren()) {
                             // Group by the family where the cousin is a child
                             for (String familyId : cousin.getFamilyIdsAsChild()) {
-                                groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>()).add(cousin);
+                                List<Person> familyCousins = groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>());
+                        // Avoid duplicates (e.g. two brothers marrying two sisters makes
+                        // the same cousin reachable via both a paternal and maternal sibling)
+                        if (!familyCousins.contains(cousin)) {
+                            familyCousins.add(cousin);
+                        }
                             }
                         }
                     }
@@ -398,7 +408,12 @@ public class FamilyRelationshipAnalyzer {
                                 for (Person cousin : firstCousinParent.getChildren()) {
                                     // Group by the family where the cousin is a child
                                     for (String familyId : cousin.getFamilyIdsAsChild()) {
-                                        groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>()).add(cousin);
+                                        List<Person> familyCousins = groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>());
+                        // Avoid duplicates (e.g. two brothers marrying two sisters makes
+                        // the same cousin reachable via both a paternal and maternal sibling)
+                        if (!familyCousins.contains(cousin)) {
+                            familyCousins.add(cousin);
+                        }
                                     }
                                 }
                             }
@@ -436,7 +451,12 @@ public class FamilyRelationshipAnalyzer {
                                         for (Person cousin : firstCousinParent.getChildren()) {
                                             // Group by the family where the cousin is a child
                                             for (String familyId : cousin.getFamilyIdsAsChild()) {
-                                                groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>()).add(cousin);
+                                                List<Person> familyCousins = groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>());
+                        // Avoid duplicates (e.g. two brothers marrying two sisters makes
+                        // the same cousin reachable via both a paternal and maternal sibling)
+                        if (!familyCousins.contains(cousin)) {
+                            familyCousins.add(cousin);
+                        }
                                             }
                                         }
                                     }
@@ -479,7 +499,12 @@ public class FamilyRelationshipAnalyzer {
                                                 for (Person cousin : firstCousinParent.getChildren()) {
                                                     // Group by the family where the cousin is a child
                                                     for (String familyId : cousin.getFamilyIdsAsChild()) {
-                                                        groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>()).add(cousin);
+                                                        List<Person> familyCousins = groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>());
+                        // Avoid duplicates (e.g. two brothers marrying two sisters makes
+                        // the same cousin reachable via both a paternal and maternal sibling)
+                        if (!familyCousins.contains(cousin)) {
+                            familyCousins.add(cousin);
+                        }
                                                     }
                                                 }
                                             }
@@ -527,7 +552,12 @@ public class FamilyRelationshipAnalyzer {
                                                         for (Person cousin : firstCousinParent.getChildren()) {
                                                             // Group by the family where the cousin is a child
                                                             for (String familyId : cousin.getFamilyIdsAsChild()) {
-                                                                groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>()).add(cousin);
+                                                                List<Person> familyCousins = groupedCousins.computeIfAbsent(familyId, k -> new ArrayList<>());
+                        // Avoid duplicates (e.g. two brothers marrying two sisters makes
+                        // the same cousin reachable via both a paternal and maternal sibling)
+                        if (!familyCousins.contains(cousin)) {
+                            familyCousins.add(cousin);
+                        }
                                                             }
                                                         }
                                                     }
