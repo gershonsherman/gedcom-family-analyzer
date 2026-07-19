@@ -39,3 +39,6 @@ Thumbs.db
 
 # HTML output files
 *.html
+
+# Geni API response cache
+geni-cache/
