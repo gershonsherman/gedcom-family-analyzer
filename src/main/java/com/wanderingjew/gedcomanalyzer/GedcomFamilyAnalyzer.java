@@ -199,9 +199,9 @@ public class GedcomFamilyAnalyzer {
                 if (gen == 1) heading = "Parents";
                 else if (gen == 2) heading = "Grandparents";
                 else heading = "Great " + (gen - 2) + " Grandparents";
-                
+
                 writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + heading + "</h3>");
+                writer.println("            <h3>" + heading + " (" + genList.size() + ")</h3>");
                 for (Person ancestor : genList) {
                     writer.println("            <div class=\"person\">");
                     writer.println("                <span class=\"person-name\">" + ancestor.getDisplayName() + "</span>");
@@ -231,9 +231,9 @@ public class GedcomFamilyAnalyzer {
                 if (gen == 1) heading = "Children";
                 else if (gen == 2) heading = "Grandchildren";
                 else heading = "Great " + (gen - 2) + " Grandchildren";
-                
+
                 writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + heading + "</h3>");
+                writer.println("            <h3>" + heading + " (" + genList.size() + ")</h3>");
                 for (Person descendant : genList) {
                     writer.println("            <div class=\"person\">");
                     writer.println("                <span class=\"person-name\">" + descendant.getDisplayName() + "</span>");
