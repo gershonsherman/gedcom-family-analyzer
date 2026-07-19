@@ -17,6 +17,11 @@ public class GedcomParser {
     
     private Map<String, Person> persons = new HashMap<>();
     private Map<String, Family> families = new HashMap<>();
+
+    // Track whether the current record's birth/death place is being assembled
+    // from a multi-line ADDR block (CITY/STAE/CTRY) rather than a single PLAC.
+    private boolean birthPlaceFromAddr = false;
+    private boolean deathPlaceFromAddr = false;
     
     /**
      * Parse a GEDCOM file and return the parsed data.
@@ -51,7 +56,7 @@ public class GedcomParser {
             String line;
             String currentId = null;
             String currentTag = null;
-            int currentLevel = -1;
+            String currentLevel2Tag = null;
             boolean skipCurrentRecord = false;
             
             while ((line = reader.readLine()) != null) {
@@ -72,6 +77,11 @@ public class GedcomParser {
                 
                 // Handle level 0 records (individuals and families)
                 if (level == 0) {
+                    // Starting a new record: reset per-record place assembly state.
+                    birthPlaceFromAddr = false;
+                    deathPlaceFromAddr = false;
+                    currentTag = null;
+                    currentLevel2Tag = null;
                     if (id != null) {
                         currentId = id;
                         // Check if this ID already exists
@@ -89,12 +99,18 @@ public class GedcomParser {
                     }
                 } else if (level == 1) {
                     currentTag = tag;
+                    currentLevel2Tag = null;
                     if (currentId != null && !skipCurrentRecord) {
                         processLevel1Tag(currentId, tag, value);
                     }
                 } else if (level == 2) {
+                    currentLevel2Tag = tag;
                     if (currentId != null && currentTag != null && !skipCurrentRecord) {
                         processLevel2Tag(currentId, currentTag, tag, value);
+                    }
+                } else if (level == 3) {
+                    if (currentId != null && currentTag != null && currentLevel2Tag != null && !skipCurrentRecord) {
+                        processLevel3Tag(currentId, currentTag, currentLevel2Tag, tag, value);
                     }
                 }
             }
@@ -190,10 +206,23 @@ public class GedcomParser {
                 case "NAME":
                     switch (tag) {
                         case "GIVN":
-                            person.setGivenName(value);
+                            if (!shouldSkipForeign(person.getGivenName(), value)) {
+                                person.setGivenName(value);
+                            }
                             break;
                         case "SURN":
-                            person.setSurname(value);
+                            // "NN" is a placeholder for an unknown surname; never let it
+                            // overwrite a real one, and prefer a Latin surname over a foreign one.
+                            if (!isUnknownSurname(value)
+                                    && !shouldSkipForeign(person.getSurname(), value)) {
+                                person.setSurname(value);
+                            }
+                            break;
+                        case "_MARNM":
+                            if (value != null && !value.trim().isEmpty()
+                                    && !shouldSkipForeign(person.getMarriedName(), value)) {
+                                person.setMarriedName(value.trim());
+                            }
                             break;
                     }
                     break;
@@ -232,7 +261,69 @@ public class GedcomParser {
             }
         }
     }
-    
+
+    /**
+     * Process level 3 tags. Currently used to assemble a birth/death place from an
+     * ADDR block (CITY/STAE/CTRY), for files that record places that way instead of PLAC.
+     */
+    private void processLevel3Tag(String id, String parentTag, String level2Tag, String tag, String value) {
+        if (!persons.containsKey(id)) {
+            return;
+        }
+        if (!"ADDR".equals(level2Tag)) {
+            return;
+        }
+        if (!"BIRT".equals(parentTag) && !"DEAT".equals(parentTag)) {
+            return;
+        }
+        if (!"CITY".equals(tag) && !"STAE".equals(tag) && !"CTRY".equals(tag)) {
+            return;
+        }
+        if (value == null || value.trim().isEmpty()) {
+            return;
+        }
+        value = value.trim();
+        Person person = persons.get(id);
+
+        if ("BIRT".equals(parentTag)) {
+            String existing = person.getBirthPlace();
+            if (existing == null || existing.trim().isEmpty()) {
+                person.setBirthPlace(value);
+                birthPlaceFromAddr = true;
+            } else if (birthPlaceFromAddr) {
+                person.setBirthPlace(existing + ", " + value);
+            }
+            // else: a PLAC value already won; leave it alone.
+        } else {
+            String existing = person.getDeathPlace();
+            if (existing == null || existing.trim().isEmpty()) {
+                person.setDeathPlace(value);
+                deathPlaceFromAddr = true;
+            } else if (deathPlaceFromAddr) {
+                person.setDeathPlace(existing + ", " + value);
+            }
+        }
+    }
+
+    /** True if this surname is the "NN" placeholder for an unknown/no name. */
+    private boolean isUnknownSurname(String value) {
+        return value != null && value.trim().equalsIgnoreCase("NN");
+    }
+
+    /** True if the value contains non-ASCII (e.g. Hebrew) characters. */
+    private boolean isForeign(String value) {
+        return value != null && !value.matches("^[\\x00-\\x7F\\s]*$");
+    }
+
+    /**
+     * True when an incoming foreign value should be skipped because we already
+     * hold a non-empty Latin (ASCII) value — we prefer the Latin spelling.
+     */
+    private boolean shouldSkipForeign(String existing, String incoming) {
+        return isForeign(incoming)
+                && existing != null && !existing.trim().isEmpty() && !isForeign(existing);
+    }
+
     /**
      * Parse a GEDCOM name value.
      * Prefers English names (ASCII characters) over Hebrew/foreign language names.
@@ -259,19 +350,24 @@ public class GedcomParser {
         // GEDCOM name format: Given /Surname/
         String[] parts = nameValue.split("/");
         if (parts.length >= 2) {
-            person.setGivenName(parts[0].trim());
-            person.setSurname(parts[1].trim());
-            
+            String given = parts[0].trim();
+            String sur = parts[1].trim();
+            person.setGivenName(given);
+            // Skip the "NN" placeholder so it doesn't become a literal surname.
+            if (!isUnknownSurname(sur)) {
+                person.setSurname(sur);
+            }
+
             // Build full name
             StringBuilder fullName = new StringBuilder();
-            if (!parts[0].trim().isEmpty()) {
-                fullName.append(parts[0].trim());
+            if (!given.isEmpty()) {
+                fullName.append(given);
             }
-            if (!parts[1].trim().isEmpty()) {
+            if (!sur.isEmpty() && !isUnknownSurname(sur)) {
                 if (fullName.length() > 0) {
                     fullName.append(" ");
                 }
-                fullName.append(parts[1].trim());
+                fullName.append(sur);
             }
             person.setFullName(fullName.toString());
         } else {

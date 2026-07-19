@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 
 /**
  * Main class for GEDCOM Family Relationship Analyzer.
@@ -137,6 +138,7 @@ public class GedcomFamilyAnalyzer {
             writer.println("        .person { margin: 8px 0; padding: 5px 0; }");
             writer.println("        .person-name { font-weight: bold; color: #2c3e50; }");
             writer.println("        .person-id { color: #7f8c8d; font-family: monospace; }");
+            writer.println("        .dup-count { color: #c0392b; font-weight: bold; }");
             writer.println("        .life-dates { color: #27ae60; font-style: italic; margin-left: 20px; }");
             writer.println("        .section { margin-bottom: 30px; }");
             writer.println("        .info { background-color: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
@@ -200,16 +202,11 @@ public class GedcomFamilyAnalyzer {
                 else if (gen == 2) heading = "Grandparents";
                 else heading = "Great " + (gen - 2) + " Grandparents";
 
+                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
                 writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + heading + " (" + genList.size() + ")</h3>");
-                for (Person ancestor : genList) {
-                    writer.println("            <div class=\"person\">");
-                    writer.println("                <span class=\"person-name\">" + ancestor.getDisplayName() + "</span>");
-                    writer.println("                <span class=\"person-id\"> (" + ancestor.getId() + ")</span>");
-                    if (!ancestor.getLifeDates().isEmpty()) {
-                        writer.println("                <div class=\"life-dates\">" + ancestor.getLifeDates() + "</div>");
-                    }
-                    writer.println("            </div>");
+                writer.println("            <h3>" + heading + " (" + collapsed.size() + ")</h3>");
+                for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
+                    writePersonEntry(writer, entry.getKey(), entry.getValue());
                 }
                 writer.println("        </div>");
             }
@@ -232,16 +229,11 @@ public class GedcomFamilyAnalyzer {
                 else if (gen == 2) heading = "Grandchildren";
                 else heading = "Great " + (gen - 2) + " Grandchildren";
 
+                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
                 writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + heading + " (" + genList.size() + ")</h3>");
-                for (Person descendant : genList) {
-                    writer.println("            <div class=\"person\">");
-                    writer.println("                <span class=\"person-name\">" + descendant.getDisplayName() + "</span>");
-                    writer.println("                <span class=\"person-id\"> (" + descendant.getId() + ")</span>");
-                    if (!descendant.getLifeDates().isEmpty()) {
-                        writer.println("                <div class=\"life-dates\">" + descendant.getLifeDates() + "</div>");
-                    }
-                    writer.println("            </div>");
+                writer.println("            <h3>" + heading + " (" + collapsed.size() + ")</h3>");
+                for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
+                    writePersonEntry(writer, entry.getKey(), entry.getValue());
                 }
                 writer.println("        </div>");
             }
@@ -266,6 +258,31 @@ public class GedcomFamilyAnalyzer {
         }
     }
     
+    /**
+     * Collapse a list of persons by identity, preserving first-seen order and
+     * counting occurrences. Used so a person who appears more than once in the
+     * same sub-list (e.g. via pedigree collapse when cousins marry) is listed once.
+     */
+    private LinkedHashMap<Person, Integer> collapseByPerson(List<Person> people) {
+        LinkedHashMap<Person, Integer> collapsed = new LinkedHashMap<>();
+        for (Person person : people) {
+            collapsed.merge(person, 1, Integer::sum);
+        }
+        return collapsed;
+    }
+
+    /** Write a single person entry, appending a "(Nx)" marker when count > 1. */
+    private void writePersonEntry(PrintWriter writer, Person person, int count) {
+        String dupMarker = count > 1 ? " <span class=\"dup-count\">(" + count + "x)</span>" : "";
+        writer.println("            <div class=\"person\">");
+        writer.println("                <span class=\"person-name\">" + person.getDisplayName() + "</span>" + dupMarker);
+        writer.println("                <span class=\"person-id\"> (" + person.getId() + ")</span>");
+        if (!person.getLifeDates().isEmpty()) {
+            writer.println("                <div class=\"life-dates\">" + person.getLifeDates() + "</div>");
+        }
+        writer.println("            </div>");
+    }
+
     private void writeCousinsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer, GedcomData gedcomData) {
         boolean foundAnyCousins = false;
         for (int degree = 1; degree <= 6; degree++) {
@@ -274,24 +291,27 @@ public class GedcomFamilyAnalyzer {
                 foundAnyCousins = true;
                 String degreeText = degree == 1 ? "1st" : degree == 2 ? "2nd" : degree == 3 ? "3rd" : degree + "th";
                 
-                // Calculate total count for this degree
+                // Collapse duplicates within each family group, then count unique cousins.
+                Map<String, LinkedHashMap<Person, Integer>> collapsedGroups = new LinkedHashMap<>();
                 int totalCount = 0;
-                for (List<Person> cousins : groupedCousins.values()) {
-                    totalCount += cousins.size();
-                }
-                
-                writer.println("        <h3>" + degreeText + " Cousins (" + totalCount + ")</h3>");
-                
                 for (Map.Entry<String, List<Person>> entry : groupedCousins.entrySet()) {
+                    LinkedHashMap<Person, Integer> collapsed = collapseByPerson(entry.getValue());
+                    collapsedGroups.put(entry.getKey(), collapsed);
+                    totalCount += collapsed.size();
+                }
+
+                writer.println("        <h3>" + degreeText + " Cousins (" + totalCount + ")</h3>");
+
+                for (Map.Entry<String, LinkedHashMap<Person, Integer>> entry : collapsedGroups.entrySet()) {
                     String familyId = entry.getKey();
-                    List<Person> cousins = entry.getValue();
-                    
+                    LinkedHashMap<Person, Integer> cousins = entry.getValue();
+
                     // Get family display name
                     String familyDisplayName = "Family " + familyId;
                     if (gedcomData.getFamily(familyId) != null) {
                         familyDisplayName = gedcomData.getFamily(familyId).getDisplayName();
                     }
-                    
+
                     if (cousins.size() > 1) {
                         writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
                         writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + " (" + cousins.size() + " cousins):</strong>");
@@ -299,15 +319,9 @@ public class GedcomFamilyAnalyzer {
                         writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
                         writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + ":</strong>");
                     }
-                    
-                    for (Person cousin : cousins) {
-                        writer.println("            <div class=\"person\">");
-                        writer.println("                <span class=\"person-name\">" + cousin.getDisplayName() + "</span>");
-                        writer.println("                <span class=\"person-id\"> (" + cousin.getId() + ")</span>");
-                        if (!cousin.getLifeDates().isEmpty()) {
-                            writer.println("                <div class=\"life-dates\">" + cousin.getLifeDates() + "</div>");
-                        }
-                        writer.println("            </div>");
+
+                    for (Map.Entry<Person, Integer> cousinEntry : cousins.entrySet()) {
+                        writePersonEntry(writer, cousinEntry.getKey(), cousinEntry.getValue());
                     }
                     writer.println("        </div>");
                 }
