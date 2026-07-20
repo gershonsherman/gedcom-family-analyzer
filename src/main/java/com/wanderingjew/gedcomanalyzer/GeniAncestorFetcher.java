@@ -526,6 +526,16 @@ public class GeniAncestorFetcher {
      * birth location if no death coordinates are available. People with neither are
      * omitted. Ordered deepest-generation first so nearer ancestors draw on top.
      */
+    /** Display name of the start person (generation 0), or null if not fetched. */
+    public String startPersonName() {
+        for (ProfileData d : profiles.values()) {
+            if (d.generation == 0) {
+                return toPerson(d).getDisplayName();
+            }
+        }
+        return null;
+    }
+
     public java.util.List<MapPoint> mapPoints() {
         java.util.List<MapPoint> points = new java.util.ArrayList<>();
         for (ProfileData d : profiles.values()) {

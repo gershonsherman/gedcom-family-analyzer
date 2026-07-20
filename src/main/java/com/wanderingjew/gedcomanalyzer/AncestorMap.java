@@ -35,7 +35,9 @@ public class AncestorMap {
         List<GeniAncestorFetcher.MapPoint> points = fetcher.mapPoints();
         System.out.println("Mapping " + points.size() + " people with coordinates.");
 
-        new AncestorMapWriter().write(points, outputFile);
+        String name = fetcher.startPersonName();
+        String title = "Ancestors of " + (name != null ? name : startId);
+        new AncestorMapWriter().write(points, outputFile, title);
         System.out.println("Map written to: " + outputFile);
     }
 }

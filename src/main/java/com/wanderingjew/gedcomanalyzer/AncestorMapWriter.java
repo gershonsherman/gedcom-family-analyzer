@@ -25,8 +25,10 @@ public class AncestorMapWriter {
              + "    <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script>";
     }
 
-    /** Write a full standalone map page. */
-    public void write(List<GeniAncestorFetcher.MapPoint> points, String outputPath) throws IOException {
+    /** Write a full standalone map page with the given title. */
+    public void write(List<GeniAncestorFetcher.MapPoint> points, String outputPath, String title)
+            throws IOException {
+        String pageTitle = (title == null || title.trim().isEmpty()) ? "Ancestor Map" : title.trim();
         try (Writer w = Files.newBufferedWriter(Paths.get(outputPath), StandardCharsets.UTF_8);
              PrintWriter out = new PrintWriter(w)) {
             out.println("<!DOCTYPE html>");
@@ -34,19 +36,28 @@ public class AncestorMapWriter {
             out.println("<head>");
             out.println("  <meta charset=\"UTF-8\">");
             out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-            out.println("  <title>Ancestor Map</title>");
+            out.println("  <title>" + escapeHtml(pageTitle) + "</title>");
             out.println(leafletHead());
             out.println("  <style>");
             out.println("    html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; }");
             out.println("    #ancestor-map { height: 100%; }");
+            out.println("    .map-title { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);");
+            out.println("                 z-index: 1000; background: rgba(255,255,255,0.92); padding: 6px 16px;");
+            out.println("                 border-radius: 6px; box-shadow: 0 1px 5px rgba(0,0,0,0.3);");
+            out.println("                 font-size: 16px; font-weight: bold; color: #2c3e50; }");
             out.println(legendCss());
             out.println("  </style>");
             out.println("</head>");
             out.println("<body>");
+            out.println("  <div class=\"map-title\">" + escapeHtml(pageTitle) + "</div>");
             out.print(mapSection(points, "ancestor-map", "100%"));
             out.println("</body>");
             out.println("</html>");
         }
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     /**
@@ -88,8 +99,9 @@ public class AncestorMapWriter {
     // Map-building logic, parameterised by the container id (uses local vars inside an IIFE).
     private static String script(String divId) {
         return String.join("\n",
-            "const maxGen = points.reduce((m, p) => Math.max(m, p.generation), 1);",
-            "function color(g) { return `hsl(${(g / maxGen) * 270}, 85%, 50%)`; }",
+            // Spread the rainbow over the first CAP generations; everything deeper is violet.",
+            "const CAP = 40;",
+            "function color(g) { const c = Math.min(g, CAP); return `hsl(${(c / CAP) * 270}, 85%, 50%)`; }",
             "function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>\"']/g,",
             "  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c])); }",
             "function pinIcon(g) {",
@@ -121,10 +133,11 @@ public class AncestorMapWriter {
             "legend.onAdd = function () {",
             "  const div = L.DomUtil.create('div', 'legend');",
             "  div.innerHTML = '<b>Generation</b><br>';",
-            "  for (let g = 0; g <= maxGen; g++) {",
+            "  [0, 5, 10, 15, 20, 25, 30, 35, 40].forEach(g => {",
+            "    const label = g === 0 ? 'you' : (g >= CAP ? CAP + '+' : g);",
             "    div.innerHTML += '<div class=\"row\"><span class=\"swatch\" style=\"background:' +",
-            "      color(g) + '\"></span>' + (g === 0 ? 'you' : g) + '</div>';",
-            "  }",
+            "      color(g) + '\"></span>' + label + '</div>';",
+            "  });",
             "  return div;",
             "};",
             "legend.addTo(map);"
