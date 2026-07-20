@@ -247,6 +247,7 @@ public class GeniAncestorFetcher {
     private ProfileData parseFocus(JsonNode focus) {
         ProfileData d = new ProfileData();
         d.guid = textOrNull(focus, "guid");
+        d.name = textOrNull(focus, "name");
         d.firstName = textOrNull(focus, "first_name");
         d.lastName = textOrNull(focus, "last_name");
         d.maidenName = textOrNull(focus, "maiden_name");
@@ -391,6 +392,7 @@ public class GeniAncestorFetcher {
 
     private Person toPerson(ProfileData d) {
         Person p = new Person(d.guid);
+        p.setGeniName(d.name);
         p.setGivenName(d.firstName);
 
         // Geni's last_name is the current/married surname; maiden_name is the birth surname.
@@ -538,6 +540,7 @@ public class GeniAncestorFetcher {
 
     private static class ProfileData {
         String guid;
+        String name;
         String firstName;
         String lastName;
         String maidenName;

@@ -233,6 +233,13 @@ public class GedcomParser {
                                 person.setMarriedName(value.trim());
                             }
                             break;
+                        case "_GENINAME":
+                            // Geni's own display name, preferred for display when present.
+                            if (value != null && !value.trim().isEmpty()
+                                    && !shouldSkipForeign(person.getGeniName(), value)) {
+                                person.setGeniName(value.trim());
+                            }
+                            break;
                     }
                     break;
                 case "BIRT":

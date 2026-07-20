@@ -60,6 +60,9 @@ public class GedcomWriter {
         if (trim(person.getMarriedName()) != null) {
             out.println("2 _MARNM " + person.getMarriedName().trim());
         }
+        if (trim(person.getGeniName()) != null) {
+            out.println("2 _GENINAME " + person.getGeniName().trim());
+        }
 
         if (trim(person.getSex()) != null) {
             out.println("1 SEX " + person.getSex().trim());

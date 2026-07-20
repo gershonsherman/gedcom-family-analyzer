@@ -15,6 +15,7 @@ public class Person {
     private String surname;
     private String marriedName;
     private String fullName;
+    private String geniName;
     private String birthDate;
     private String deathDate;
     private String birthPlace;
@@ -49,6 +50,10 @@ public class Person {
 
     public String getMarriedName() { return marriedName; }
     public void setMarriedName(String marriedName) { this.marriedName = marriedName; }
+
+    /** Geni's own display name for this person (from the API), when available. */
+    public String getGeniName() { return geniName; }
+    public void setGeniName(String geniName) { this.geniName = geniName; }
 
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }
@@ -124,6 +129,18 @@ public class Person {
     public String getDisplayName() {
         String given = trimToNull(givenName);
         String maiden = maidenSurname();
+
+        // Prefer Geni's own display name when we have it (from the API), so the report
+        // matches Geni. For women, add the maiden name in parentheses if it isn't already
+        // part of that name (Geni's display name typically omits it).
+        String geni = trimToNull(geniName);
+        if (geni != null) {
+            if (isFemale() && maiden != null && !geni.toLowerCase().contains(maiden.toLowerCase())) {
+                return geni + " (" + maiden + ")";
+            }
+            return geni;
+        }
+
         // A married name (e.g. from _MARNM) only applies to women; some GEDCOMs record
         // _MARNM on men too, which must not be shown as a "married (maiden)" name.
         String married = isFemale() ? trimToNull(marriedName) : null;
