@@ -625,19 +625,7 @@ public class FamilyRelationshipAnalyzer {
      * and the value is a list of persons in that generation.
      */
     public Map<Integer, List<Person>> getAncestorsByGeneration(Person person) {
-        Map<Integer, List<Person>> result = new HashMap<>();
-        getAncestorsByGenerationRecursive(person, 1, result, new HashSet<>());
-        return result;
-    }
-
-    private void getAncestorsByGenerationRecursive(Person person, int generation, Map<Integer, List<Person>> result, Set<Person> visited) {
-        if (person == null || visited.contains(person)) return;
-        visited.add(person);
-        
-        for (Person parent : person.getParents()) {
-            result.computeIfAbsent(generation, k -> new ArrayList<>()).add(parent);
-            getAncestorsByGenerationRecursive(parent, generation + 1, result, visited);
-        }
+        return groupByGeneration(person, true);
     }
 
     /**
@@ -646,18 +634,42 @@ public class FamilyRelationshipAnalyzer {
      * and the value is a list of persons in that generation.
      */
     public Map<Integer, List<Person>> getDescendantsByGeneration(Person person) {
-        Map<Integer, List<Person>> result = new HashMap<>();
-        getDescendantsByGenerationRecursive(person, 1, result, new HashSet<>());
-        return result;
+        return groupByGeneration(person, false);
     }
 
-    private void getDescendantsByGenerationRecursive(Person person, int generation, Map<Integer, List<Person>> result, Set<Person> visited) {
-        if (person == null || visited.contains(person)) return;
-        visited.add(person);
-        
-        for (Person child : person.getChildren()) {
-            result.computeIfAbsent(generation, k -> new ArrayList<>()).add(child);
-            getDescendantsByGenerationRecursive(child, generation + 1, result, visited);
+    /**
+     * Group ancestors (or descendants) by generation using breadth-first search, so each
+     * person is first reached at their SHALLOWEST generation — their closest relationship.
+     * A person reached via lines of different lengths (pedigree collapse) is still recorded
+     * at every generation where they occur, but their own line is expanded only from the
+     * shallowest, which both prevents runaway recursion and reports the correct closest
+     * relationship (a DFS with a global visited set gets this wrong).
+     */
+    private Map<Integer, List<Person>> groupByGeneration(Person person, boolean ancestors) {
+        Map<Integer, List<Person>> result = new HashMap<>();
+        if (person == null) {
+            return result;
         }
+        Set<Person> expanded = new HashSet<>();
+        expanded.add(person);
+        List<Person> frontier = new ArrayList<>();
+        frontier.add(person);
+
+        int generation = 0;
+        while (!frontier.isEmpty()) {
+            List<Person> next = new ArrayList<>();
+            for (Person p : frontier) {
+                List<Person> step = ancestors ? p.getParents() : p.getChildren();
+                for (Person relative : step) {
+                    result.computeIfAbsent(generation + 1, k -> new ArrayList<>()).add(relative);
+                    if (expanded.add(relative)) {
+                        next.add(relative);
+                    }
+                }
+            }
+            frontier = next;
+            generation++;
+        }
+        return result;
     }
 } 
