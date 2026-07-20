@@ -72,6 +72,10 @@ public class GeniAncestorFetcher {
             while (!queue.isEmpty()) {
                 QueueEntry entry = queue.poll();
                 JsonNode root = client.immediateFamily(entry.id);
+                if (root == null) {
+                    // Offline mode and this profile isn't cached yet — skip it (partial result).
+                    continue;
+                }
                 JsonNode focus = root.get("focus");
                 if (focus == null) {
                     continue;
@@ -84,6 +88,7 @@ public class GeniAncestorFetcher {
                 visited.add(numericId);
 
                 ProfileData data = parseFocus(focus);
+                data.generation = entry.generation;
                 accumulateUnions(root.get("nodes"));
                 data.childUnionId = findChildUnion(root.get("nodes"), numericId);
                 synchronized (this) {
@@ -121,7 +126,106 @@ public class GeniAncestorFetcher {
 
         System.out.println("Fetched " + profiles.size() + " profiles total ("
                 + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits).");
+        printGenerationHistogram();
         return buildGedcomData();
+    }
+
+    /**
+     * Print, per generation, both the distinct ancestor count and the ahnentafel
+     * "positions" count (every path, counting a person once per path). With pedigree
+     * collapse the two diverge; the positions column matches Geni's Ancestor report.
+     */
+    public void printGenerationHistogram() {
+        java.util.Map<Integer, Integer> distinct = new java.util.TreeMap<>();
+        for (ProfileData d : profiles.values()) {
+            distinct.merge(d.generation, 1, Integer::sum);
+        }
+        java.util.Map<Integer, Long> positions = computePositionCounts();
+
+        System.out.println("Ancestors per generation (0 = start person):");
+        System.out.printf("  %-5s %10s %10s%n", "gen", "distinct", "positions");
+        for (java.util.Map.Entry<Integer, Integer> e : distinct.entrySet()) {
+            int g = e.getKey();
+            System.out.printf("  %-5d %10d %10d%n", g, e.getValue(), positions.getOrDefault(g, 0L));
+        }
+    }
+
+    /** Count ahnentafel positions (distinct root-to-ancestor paths) per generation. */
+    private java.util.Map<Integer, Long> computePositionCounts() {
+        java.util.Map<Integer, Long> counts = new java.util.TreeMap<>();
+        String root = null;
+        int maxGen = 0;
+        for (java.util.Map.Entry<String, ProfileData> e : profiles.entrySet()) {
+            if (e.getValue().generation == 0) {
+                root = e.getKey();
+            }
+            maxGen = Math.max(maxGen, e.getValue().generation);
+        }
+        if (root == null) {
+            return counts;
+        }
+
+        java.util.List<PathEntry> level = new java.util.ArrayList<>();
+        java.util.Set<String> rootPath = new java.util.HashSet<>();
+        rootPath.add(root);
+        level.add(new PathEntry(root, rootPath));
+
+        for (int g = 0; g <= maxGen && !level.isEmpty(); g++) {
+            counts.put(g, (long) level.size());
+            java.util.List<PathEntry> next = new java.util.ArrayList<>();
+            for (PathEntry entry : level) {
+                ProfileData d = profiles.get(entry.id);
+                if (d == null || d.childUnionId == null) {
+                    continue;
+                }
+                // Use the same two parents (one father, one mother) the GEDCOM records,
+                // not every union partner, so positions match the actual ancestor tree.
+                for (String parent : parentsOf(d.childUnionId)) {
+                    if (!entry.path.contains(parent)) {
+                        java.util.Set<String> path = new java.util.HashSet<>(entry.path);
+                        path.add(parent);
+                        next.add(new PathEntry(parent, path));
+                    }
+                }
+            }
+            level = next;
+        }
+        return counts;
+    }
+
+    /** The (up to) two parents of a union — one father, one mother — matching how the GEDCOM is built. */
+    private java.util.List<String> parentsOf(String unionId) {
+        String father = null;
+        String mother = null;
+        for (String p : unionPartners.getOrDefault(unionId, new LinkedHashSet<>())) {
+            ProfileData d = profiles.get(p);
+            if (d == null) {
+                continue;
+            }
+            if ("female".equalsIgnoreCase(d.gender)) {
+                mother = p;
+            } else {
+                father = p;
+            }
+        }
+        java.util.List<String> parents = new java.util.ArrayList<>(2);
+        if (father != null) {
+            parents.add(father);
+        }
+        if (mother != null) {
+            parents.add(mother);
+        }
+        return parents;
+    }
+
+    private static final class PathEntry {
+        final String id;
+        final java.util.Set<String> path;
+
+        PathEntry(String id, java.util.Set<String> path) {
+            this.id = id;
+            this.path = path;
+        }
     }
 
     private void writeCheckpoint() {
@@ -148,12 +252,22 @@ public class GeniAncestorFetcher {
         JsonNode birth = focus.get("birth");
         if (birth != null) {
             d.birthDate = buildDate(birth.get("date"));
-            d.birthPlace = buildPlace(birth.get("location"));
+            JsonNode loc = birth.get("location");
+            d.birthPlace = buildPlace(loc);
+            if (loc != null) {
+                d.birthLat = doubleOrNull(loc, "latitude");
+                d.birthLng = doubleOrNull(loc, "longitude");
+            }
         }
         JsonNode death = focus.get("death");
         if (death != null) {
             d.deathDate = buildDate(death.get("date"));
-            d.deathPlace = buildPlace(death.get("location"));
+            JsonNode loc = death.get("location");
+            d.deathPlace = buildPlace(loc);
+            if (loc != null) {
+                d.deathLat = doubleOrNull(loc, "latitude");
+                d.deathLng = doubleOrNull(loc, "longitude");
+            }
         }
         return d;
     }
@@ -287,8 +401,12 @@ public class GeniAncestorFetcher {
 
         p.setBirthDate(d.birthDate);
         p.setBirthPlace(d.birthPlace);
+        p.setBirthLatitude(d.birthLat);
+        p.setBirthLongitude(d.birthLng);
         p.setDeathDate(d.deathDate);
         p.setDeathPlace(d.deathPlace);
+        p.setDeathLatitude(d.deathLat);
+        p.setDeathLongitude(d.deathLng);
         return p;
     }
 
@@ -378,6 +496,33 @@ public class GeniAncestorFetcher {
         return (v == null || v.isNull()) ? null : v.asInt();
     }
 
+    private static Double doubleOrNull(JsonNode node, String field) {
+        JsonNode v = node.get(field);
+        if (v == null || v.isNull()) {
+            return null;
+        }
+        double d = v.asDouble();
+        // Geni uses 0/0 or absent coordinates for ungeocoded places; treat 0,0 as missing.
+        return d == 0.0 ? null : d;
+    }
+
+    /**
+     * One map marker per fetched person, placed at their death location, or their
+     * birth location if no death coordinates are available. People with neither are
+     * omitted. Ordered deepest-generation first so nearer ancestors draw on top.
+     */
+    public java.util.List<MapPoint> mapPoints() {
+        java.util.List<MapPoint> points = new java.util.ArrayList<>();
+        for (ProfileData d : profiles.values()) {
+            MapPoint point = MapPoint.fromPerson(toPerson(d), d.generation);
+            if (point != null) {
+                points.add(point);
+            }
+        }
+        points.sort((a, b) -> Integer.compare(b.generation, a.generation));
+        return points;
+    }
+
     private static class ProfileData {
         String guid;
         String firstName;
@@ -386,9 +531,53 @@ public class GeniAncestorFetcher {
         String gender;
         String birthDate;
         String birthPlace;
+        Double birthLat;
+        Double birthLng;
         String deathDate;
         String deathPlace;
+        Double deathLat;
+        Double deathLng;
         String childUnionId;
+        int generation;
+    }
+
+    /** A single map marker: one per person, at their death place (or birth place if no death location). */
+    public static class MapPoint {
+        public final String name;
+        public final String lifeDates;
+        public final String place;
+        public final int generation;
+        public final double lat;
+        public final double lng;
+        public final boolean death;
+
+        MapPoint(String name, String lifeDates, String place, int generation,
+                 double lat, double lng, boolean death) {
+            this.name = name;
+            this.lifeDates = lifeDates;
+            this.place = place;
+            this.generation = generation;
+            this.lat = lat;
+            this.lng = lng;
+            this.death = death;
+        }
+
+        /**
+         * Build a map point for a person at the given generation, using their death
+         * location (or birth location if no death coordinates). Returns null if the
+         * person has no usable coordinates.
+         */
+        public static MapPoint fromPerson(Person p, int generation) {
+            if (p.getDeathLatitude() != null && p.getDeathLongitude() != null) {
+                return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getDeathPlace(),
+                        generation, p.getDeathLatitude(), p.getDeathLongitude(), true);
+            }
+            if (p.getBirthLatitude() != null && p.getBirthLongitude() != null) {
+                return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getBirthPlace(),
+                        generation, p.getBirthLatitude(), p.getBirthLongitude(), false);
+            }
+            return null;
+        }
     }
 
     private static class QueueEntry {

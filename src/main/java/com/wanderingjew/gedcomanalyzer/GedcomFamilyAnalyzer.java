@@ -144,6 +144,7 @@ public class GedcomFamilyAnalyzer {
             writer.println("        .info { background-color: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
             writer.println("        .generation { margin-bottom: 20px; }");
             writer.println("    </style>");
+            writer.println(AncestorMapWriter.leafletHead());
             writer.println("</head>");
             writer.println("<body>");
             
@@ -156,7 +157,16 @@ public class GedcomFamilyAnalyzer {
             writer.println("        <strong>Person ID:</strong> " + personId + "<br>");
             writer.println("        <strong>GEDCOM File:</strong> " + gedcomFile);
             writer.println("    </div>");
-            
+
+            // Ancestor map (only rendered when the data carries coordinates)
+            String mapHtml = buildAncestorMapHtml(analyzer, targetPerson);
+            if (!mapHtml.isEmpty()) {
+                writer.println("    <div class=\"section\">");
+                writer.println("        <h2>ANCESTOR MAP</h2>");
+                writer.print(mapHtml);
+                writer.println("    </div>");
+            }
+
             // Ancestors
             writer.println("    <div class=\"section\">");
             writer.println("        <h2>ANCESTORS</h2>");
@@ -186,6 +196,37 @@ public class GedcomFamilyAnalyzer {
         }
     }
     
+    /**
+     * Build the embeddable ancestor-map HTML (target at generation 0, then ancestors by
+     * generation, deduped). Returns an empty string when no one has coordinates, so the
+     * map section is simply omitted for coordinate-less GEDCOMs.
+     */
+    private String buildAncestorMapHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson) throws IOException {
+        List<GeniAncestorFetcher.MapPoint> points = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
+        seen.add(targetPerson.getId());
+        GeniAncestorFetcher.MapPoint self = GeniAncestorFetcher.MapPoint.fromPerson(targetPerson, 0);
+        if (self != null) {
+            points.add(self);
+        }
+
+        Map<Integer, List<Person>> byGen = analyzer.getAncestorsByGeneration(targetPerson);
+        int maxGen = byGen.keySet().stream().max(Integer::compareTo).orElse(0);
+        for (int gen = 1; gen <= maxGen; gen++) {
+            for (Person ancestor : byGen.getOrDefault(gen, new ArrayList<>())) {
+                if (!seen.add(ancestor.getId())) {
+                    continue;
+                }
+                GeniAncestorFetcher.MapPoint point = GeniAncestorFetcher.MapPoint.fromPerson(ancestor, gen);
+                if (point != null) {
+                    points.add(point);
+                }
+            }
+        }
+        return new AncestorMapWriter().mapSection(points, "ancestor-map", "500px");
+    }
+
     private void writeAncestorsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
         Map<Integer, List<Person>> ancestorsByGen = analyzer.getAncestorsByGeneration(targetPerson);
         
@@ -196,7 +237,7 @@ public class GedcomFamilyAnalyzer {
             for (int gen = 1; gen <= maxGen; gen++) {
                 List<Person> genList = ancestorsByGen.getOrDefault(gen, new ArrayList<>());
                 if (genList.isEmpty()) continue;
-                
+
                 String heading;
                 if (gen == 1) heading = "Parents";
                 else if (gen == 2) heading = "Grandparents";

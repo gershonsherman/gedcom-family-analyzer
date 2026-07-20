@@ -40,6 +40,9 @@ public class GeniClient {
     private final Path cacheDir;
     private final long requestDelayMs;
 
+    // When true, never hit the network: serve from cache, return null on a miss.
+    private boolean offline = false;
+
     private int requestCount = 0;
     private int cacheHits = 0;
 
@@ -59,6 +62,9 @@ public class GeniClient {
     public int getRequestCount() { return requestCount; }
     public int getCacheHits() { return cacheHits; }
 
+    /** Cache-only mode: serve from the cache, never call the network, return null on a miss. */
+    public void setOffline(boolean offline) { this.offline = offline; }
+
     /**
      * Fetch the immediate family of a profile. {@code profileId} may be a numeric
      * id ("34670250082") or a guid form ("g6000000031619060876").
@@ -66,8 +72,21 @@ public class GeniClient {
     public JsonNode immediateFamily(String profileId) throws IOException, InterruptedException {
         Path cacheFile = cacheDir.resolve(profileId + "." + CACHE_VERSION + ".json");
         if (Files.exists(cacheFile)) {
-            cacheHits++;
-            return mapper.readTree(Files.readAllBytes(cacheFile));
+            try {
+                JsonNode node = mapper.readTree(Files.readAllBytes(cacheFile));
+                cacheHits++;
+                return node;
+            } catch (IOException e) {
+                // Likely a half-written file from a concurrent fetch. Skip it when offline;
+                // when online, fall through and refetch a clean copy.
+                if (offline) {
+                    return null;
+                }
+            }
+        }
+
+        if (offline) {
+            return null;
         }
 
         String body = get("profile-" + profileId + "/immediate-family");

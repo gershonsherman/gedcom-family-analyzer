@@ -57,6 +57,7 @@ public class GedcomParser {
             String currentId = null;
             String currentTag = null;
             String currentLevel2Tag = null;
+            String currentLevel3Tag = null;
             boolean skipCurrentRecord = false;
             
             while ((line = reader.readLine()) != null) {
@@ -100,17 +101,25 @@ public class GedcomParser {
                 } else if (level == 1) {
                     currentTag = tag;
                     currentLevel2Tag = null;
+                    currentLevel3Tag = null;
                     if (currentId != null && !skipCurrentRecord) {
                         processLevel1Tag(currentId, tag, value);
                     }
                 } else if (level == 2) {
                     currentLevel2Tag = tag;
+                    currentLevel3Tag = null;
                     if (currentId != null && currentTag != null && !skipCurrentRecord) {
                         processLevel2Tag(currentId, currentTag, tag, value);
                     }
                 } else if (level == 3) {
+                    currentLevel3Tag = tag;
                     if (currentId != null && currentTag != null && currentLevel2Tag != null && !skipCurrentRecord) {
                         processLevel3Tag(currentId, currentTag, currentLevel2Tag, tag, value);
+                    }
+                } else if (level == 4) {
+                    if (currentId != null && currentTag != null && currentLevel2Tag != null
+                            && currentLevel3Tag != null && !skipCurrentRecord) {
+                        processLevel4Tag(currentId, currentTag, currentLevel2Tag, currentLevel3Tag, tag, value);
                     }
                 }
             }
@@ -302,6 +311,66 @@ public class GedcomParser {
             } else if (deathPlaceFromAddr) {
                 person.setDeathPlace(existing + ", " + value);
             }
+        }
+    }
+
+    /**
+     * Process level 4 tags — currently birth/death coordinates recorded as
+     * BIRT/DEAT &gt; PLAC &gt; MAP &gt; LATI/LONG.
+     */
+    private void processLevel4Tag(String id, String parentTag, String level2Tag, String level3Tag,
+                                  String tag, String value) {
+        if (!persons.containsKey(id)) {
+            return;
+        }
+        if (!"PLAC".equals(level2Tag) || !"MAP".equals(level3Tag)) {
+            return;
+        }
+        if (!"BIRT".equals(parentTag) && !"DEAT".equals(parentTag)) {
+            return;
+        }
+        Double coord = parseCoordinate(value);
+        if (coord == null) {
+            return;
+        }
+        Person person = persons.get(id);
+        if ("LATI".equals(tag)) {
+            if ("BIRT".equals(parentTag)) {
+                person.setBirthLatitude(coord);
+            } else {
+                person.setDeathLatitude(coord);
+            }
+        } else if ("LONG".equals(tag)) {
+            if ("BIRT".equals(parentTag)) {
+                person.setBirthLongitude(coord);
+            } else {
+                person.setDeathLongitude(coord);
+            }
+        }
+    }
+
+    /** Parse a GEDCOM coordinate like "N50.064650" / "W74.006000" into a signed double. */
+    private Double parseCoordinate(String value) {
+        if (value == null) {
+            return null;
+        }
+        value = value.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        char hemisphere = Character.toUpperCase(value.charAt(0));
+        String number = value;
+        double sign = 1.0;
+        if (hemisphere == 'N' || hemisphere == 'E' || hemisphere == 'S' || hemisphere == 'W') {
+            number = value.substring(1).trim();
+            if (hemisphere == 'S' || hemisphere == 'W') {
+                sign = -1.0;
+            }
+        }
+        try {
+            return sign * Double.parseDouble(number);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

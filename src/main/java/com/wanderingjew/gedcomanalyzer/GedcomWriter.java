@@ -65,8 +65,10 @@ public class GedcomWriter {
             out.println("1 SEX " + person.getSex().trim());
         }
 
-        writeEvent(out, "BIRT", person.getBirthDate(), person.getBirthPlace());
-        writeEvent(out, "DEAT", person.getDeathDate(), person.getDeathPlace());
+        writeEvent(out, "BIRT", person.getBirthDate(), person.getBirthPlace(),
+                person.getBirthLatitude(), person.getBirthLongitude());
+        writeEvent(out, "DEAT", person.getDeathDate(), person.getDeathPlace(),
+                person.getDeathLatitude(), person.getDeathLongitude());
 
         for (String famId : person.getFamilyIdsAsChild()) {
             out.println("1 FAMC @F" + famId + "@");
@@ -78,19 +80,36 @@ public class GedcomWriter {
         out.println("1 RFN geni:" + person.getId());
     }
 
-    private void writeEvent(PrintWriter out, String tag, String date, String place) {
+    private void writeEvent(PrintWriter out, String tag, String date, String place,
+                            Double latitude, Double longitude) {
         String d = trim(date);
         String p = trim(place);
-        if (d == null && p == null) {
+        boolean hasCoords = latitude != null && longitude != null;
+        if (d == null && p == null && !hasCoords) {
             return;
         }
         out.println("1 " + tag);
         if (d != null) {
             out.println("2 DATE " + d);
         }
-        if (p != null) {
-            out.println("2 PLAC " + p);
+        if (p != null || hasCoords) {
+            out.println("2 PLAC " + (p == null ? "" : p));
+            if (hasCoords) {
+                out.println("3 MAP");
+                out.println("4 LATI " + formatLatitude(latitude));
+                out.println("4 LONG " + formatLongitude(longitude));
+            }
         }
+    }
+
+    /** GEDCOM latitude: hemisphere letter (N/S) followed by the absolute value. */
+    private String formatLatitude(double lat) {
+        return (lat >= 0 ? "N" : "S") + String.format("%.6f", Math.abs(lat));
+    }
+
+    /** GEDCOM longitude: hemisphere letter (E/W) followed by the absolute value. */
+    private String formatLongitude(double lng) {
+        return (lng >= 0 ? "E" : "W") + String.format("%.6f", Math.abs(lng));
     }
 
     private void writeFamily(PrintWriter out, Family family) {

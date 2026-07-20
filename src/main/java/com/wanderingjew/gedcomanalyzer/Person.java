@@ -19,6 +19,10 @@ public class Person {
     private String deathDate;
     private String birthPlace;
     private String deathPlace;
+    private Double birthLatitude;
+    private Double birthLongitude;
+    private Double deathLatitude;
+    private Double deathLongitude;
     private String sex;
     private List<String> familyIdsAsChild = new ArrayList<>();
     private List<String> familyIdsAsSpouse = new ArrayList<>();
@@ -60,6 +64,18 @@ public class Person {
 
     public String getDeathPlace() { return deathPlace; }
     public void setDeathPlace(String deathPlace) { this.deathPlace = deathPlace; }
+
+    public Double getBirthLatitude() { return birthLatitude; }
+    public void setBirthLatitude(Double birthLatitude) { this.birthLatitude = birthLatitude; }
+
+    public Double getBirthLongitude() { return birthLongitude; }
+    public void setBirthLongitude(Double birthLongitude) { this.birthLongitude = birthLongitude; }
+
+    public Double getDeathLatitude() { return deathLatitude; }
+    public void setDeathLatitude(Double deathLatitude) { this.deathLatitude = deathLatitude; }
+
+    public Double getDeathLongitude() { return deathLongitude; }
+    public void setDeathLongitude(Double deathLongitude) { this.deathLongitude = deathLongitude; }
 
     public String getSex() { return sex; }
     public void setSex(String sex) { this.sex = sex; }
