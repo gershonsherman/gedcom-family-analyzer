@@ -124,7 +124,9 @@ public class Person {
     public String getDisplayName() {
         String given = trimToNull(givenName);
         String maiden = maidenSurname();
-        String married = trimToNull(marriedName);
+        // A married name (e.g. from _MARNM) only applies to women; some GEDCOMs record
+        // _MARNM on men too, which must not be shown as a "married (maiden)" name.
+        String married = isFemale() ? trimToNull(marriedName) : null;
 
         if (married != null) {
             StringBuilder name = new StringBuilder();
@@ -201,6 +203,12 @@ public class Person {
         }
         Matcher m = YEAR_PATTERN.matcher(date);
         return m.find() ? m.group(1) : null;
+    }
+
+    /** True when this person is recorded as female (GEDCOM "F" or "female"). */
+    private boolean isFemale() {
+        String s = trimToNull(sex);
+        return s != null && (s.equalsIgnoreCase("F") || s.equalsIgnoreCase("female"));
     }
 
     /** Surname for display, treating the "NN" placeholder (no/unknown name) as absent. */
