@@ -1,0 +1,8 @@
+# Manual coordinate corrections for places Geni geocoded to the wrong spot.
+# Format (tab-separated):  place-substring   latitude   longitude
+# Matching is case-insensitive and by substring, so "Babylon" also matches
+# "Babylon, Mesopotamia". Add a line whenever you spot another bad location.
+#
+# place substring	latitude	longitude
+Babylon	32.5355	44.4275
+Memphis, Egypt	29.8447	31.2508
