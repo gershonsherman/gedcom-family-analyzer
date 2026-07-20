@@ -33,6 +33,9 @@ public class GeniAncestorFetcher {
     // Union membership accumulated from every response, keyed by numeric union id.
     private final Map<String, Set<String>> unionPartners = new HashMap<>();
     private final Map<String, Set<String>> unionChildren = new HashMap<>();
+    // Numeric union id -> Geni union guid (which matches the family id in Geni's own
+    // GEDCOM export), so our output merges cleanly with those exports.
+    private final Map<String, String> unionGuid = new HashMap<>();
 
     private final GedcomWriter writer = new GedcomWriter();
     private String checkpointPath;
@@ -280,6 +283,13 @@ public class GeniAncestorFetcher {
         Iterator<Map.Entry<String, JsonNode>> it = nodes.fields();
         while (it.hasNext()) {
             Map.Entry<String, JsonNode> node = it.next();
+            if (node.getKey().startsWith("union-")) {
+                JsonNode g = node.getValue().get("guid");
+                if (g != null && !g.isNull()) {
+                    unionGuid.put(stripPrefix(node.getKey()), g.asText());
+                }
+                continue;
+            }
             if (!node.getKey().startsWith("profile-")) {
                 continue;
             }
@@ -345,13 +355,16 @@ public class GeniAncestorFetcher {
             if (unionId == null || child.guid == null) {
                 continue;
             }
-            Family family = families.computeIfAbsent(unionId, Family::new);
+            // Use the union's Geni guid as the family id so it matches Geni's own GEDCOM
+            // export (falling back to the numeric union id if no guid was seen).
+            String familyId = unionGuid.getOrDefault(unionId, unionId);
+            Family family = families.computeIfAbsent(familyId, Family::new);
 
             // Link child -> family.
             family.addChild(child.guid);
             Person childPerson = persons.get(child.guid);
-            if (childPerson != null && !childPerson.getFamilyIdsAsChild().contains(unionId)) {
-                childPerson.addFamilyAsChild(unionId);
+            if (childPerson != null && !childPerson.getFamilyIdsAsChild().contains(familyId)) {
+                childPerson.addFamilyAsChild(familyId);
             }
 
             // Assign parents (only those we actually fetched, so they have full detail).
@@ -367,8 +380,8 @@ public class GeniAncestorFetcher {
                     family.setHusbandId(parentGuid);
                 }
                 Person parentPerson = persons.get(parentGuid);
-                if (parentPerson != null && !parentPerson.getFamilyIdsAsSpouse().contains(unionId)) {
-                    parentPerson.addFamilyAsSpouse(unionId);
+                if (parentPerson != null && !parentPerson.getFamilyIdsAsSpouse().contains(familyId)) {
+                    parentPerson.addFamilyAsSpouse(familyId);
                 }
             }
         }

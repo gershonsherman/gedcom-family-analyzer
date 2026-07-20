@@ -466,14 +466,17 @@ public class GedcomParser {
         
         // Build person relationships
         for (Person person : persons.values()) {
-            // Build parent relationships
+            // Build parent relationships. Guard against duplicates: when files use
+            // different family ids for the same couple (e.g. mixing a Geni export with
+            // our union-based ids), a person can have two FAMC families with the same
+            // parents — without this guard the parent would be added twice.
             for (String familyId : person.getFamilyIdsAsChild()) {
                 if (families.containsKey(familyId)) {
                     Family family = families.get(familyId);
-                    if (family.getHusband() != null) {
+                    if (family.getHusband() != null && !person.getParents().contains(family.getHusband())) {
                         person.getParents().add(family.getHusband());
                     }
-                    if (family.getWife() != null) {
+                    if (family.getWife() != null && !person.getParents().contains(family.getWife())) {
                         person.getParents().add(family.getWife());
                     }
                 }

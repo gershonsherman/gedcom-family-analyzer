@@ -139,6 +139,7 @@ public class GedcomFamilyAnalyzer {
             writer.println("        .person-name { font-weight: bold; color: #2c3e50; }");
             writer.println("        .person-id { color: #7f8c8d; font-family: monospace; }");
             writer.println("        .dup-count { color: #c0392b; font-weight: bold; }");
+            writer.println("        .cross-ref { color: #8e44ad; font-style: italic; font-size: 13px; }");
             writer.println("        .life-dates { color: #27ae60; font-style: italic; margin-left: 20px; }");
             writer.println("        .section { margin-bottom: 30px; }");
             writer.println("        .info { background-color: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
@@ -234,24 +235,79 @@ public class GedcomFamilyAnalyzer {
             writer.println("        <p>No ancestors found.</p>");
         } else {
             int maxGen = ancestorsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
+
+            // Which generations each ancestor appears in — a person reached via lines of
+            // different lengths (pedigree collapse) shows up in more than one.
+            Map<String, java.util.TreeSet<Integer>> personGens = new java.util.HashMap<>();
+            for (int gen = 1; gen <= maxGen; gen++) {
+                for (Person p : ancestorsByGen.getOrDefault(gen, new ArrayList<>())) {
+                    personGens.computeIfAbsent(p.getId(), k -> new java.util.TreeSet<>()).add(gen);
+                }
+            }
+
             for (int gen = 1; gen <= maxGen; gen++) {
                 List<Person> genList = ancestorsByGen.getOrDefault(gen, new ArrayList<>());
                 if (genList.isEmpty()) continue;
 
-                String heading;
-                if (gen == 1) heading = "Parents";
-                else if (gen == 2) heading = "Grandparents";
-                else heading = "Great " + (gen - 2) + " Grandparents";
-
                 LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
                 writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + heading + " (" + collapsed.size() + ")</h3>");
+                writer.println("            <h3>" + ancestorGenLabelPlural(gen) + " (" + collapsed.size() + ")</h3>");
                 for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
-                    writePersonEntry(writer, entry.getKey(), entry.getValue());
+                    String crossRef = ancestorCrossReference(gen, personGens.get(entry.getKey().getId()));
+                    writePersonEntry(writer, entry.getKey(), entry.getValue(), crossRef);
                 }
                 writer.println("        </div>");
             }
         }
+    }
+
+    /** Section heading for an ancestor generation (e.g. 1 -> "Parents", 12 -> "Great 10 Grandparents"). */
+    private String ancestorGenLabelPlural(int gen) {
+        if (gen == 1) return "Parents";
+        if (gen == 2) return "Grandparents";
+        return "Great " + (gen - 2) + " Grandparents";
+    }
+
+    /** Singular label for a cross-reference (e.g. 1 -> "parent", 21 -> "19th great-grandparent"). */
+    private String ancestorGenLabelSingular(int gen) {
+        if (gen == 1) return "parent";
+        if (gen == 2) return "grandparent";
+        return ordinal(gen - 2) + " great-grandparent";
+    }
+
+    /**
+     * When an ancestor also appears at other generations (via other bloodlines), return a
+     * note naming those other positions; empty string otherwise.
+     */
+    private String ancestorCrossReference(int currentGen, java.util.TreeSet<Integer> allGens) {
+        if (allGens == null || allGens.size() < 2) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("also ");
+        boolean first = true;
+        for (int g : allGens) {
+            if (g == currentGen) continue;
+            if (!first) sb.append(", ");
+            sb.append(ancestorGenLabelSingular(g));
+            first = false;
+        }
+        return sb.toString();
+    }
+
+    private String ordinal(int n) {
+        int mod100 = n % 100;
+        String suffix;
+        if (mod100 >= 11 && mod100 <= 13) {
+            suffix = "th";
+        } else {
+            switch (n % 10) {
+                case 1: suffix = "st"; break;
+                case 2: suffix = "nd"; break;
+                case 3: suffix = "rd"; break;
+                default: suffix = "th";
+            }
+        }
+        return n + suffix;
     }
     
     private void writeDescendantsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
@@ -314,9 +370,20 @@ public class GedcomFamilyAnalyzer {
 
     /** Write a single person entry, appending a "(Nx)" marker when count > 1. */
     private void writePersonEntry(PrintWriter writer, Person person, int count) {
+        writePersonEntry(writer, person, count, "");
+    }
+
+    /**
+     * Write a single person entry, with an optional "(Nx)" marker and an optional
+     * cross-reference note (e.g. "also 19th great-grandparent") for collapsed ancestors.
+     */
+    private void writePersonEntry(PrintWriter writer, Person person, int count, String crossRef) {
         String dupMarker = count > 1 ? " <span class=\"dup-count\">(" + count + "x)</span>" : "";
+        String crossRefSpan = (crossRef != null && !crossRef.isEmpty())
+                ? " <span class=\"cross-ref\">— " + crossRef + "</span>" : "";
         writer.println("            <div class=\"person\">");
-        writer.println("                <span class=\"person-name\">" + person.getDisplayName() + "</span>" + dupMarker);
+        writer.println("                <span class=\"person-name\">" + person.getDisplayName() + "</span>"
+                + dupMarker + crossRefSpan);
         writer.println("                <span class=\"person-id\"> (" + person.getId() + ")</span>");
         if (!person.getLifeDates().isEmpty()) {
             writer.println("                <div class=\"life-dates\">" + person.getLifeDates() + "</div>");
