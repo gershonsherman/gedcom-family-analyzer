@@ -2,7 +2,6 @@ package com.wanderingjew.gedcomanalyzer;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 /**
  * CLI entry point that pulls a person's ancestry from the Geni API and writes it
@@ -37,7 +36,8 @@ public class GeniFetch {
         String outputFile = args[2];
         long delayMs = args.length > 3 ? Long.parseLong(args[3]) : 300L;
 
-        Path cacheDir = Paths.get("geni-cache");
+        Path cacheDir = GeniClient.cacheDirFromEnv();
+        System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
         System.out.println("Fetching ancestors of " + startId
                 + (maxGenerations > 0 ? " up to " + maxGenerations + " generations" : " (unlimited)") + "...");
         System.out.println("Responses cache under " + cacheDir.toAbsolutePath()

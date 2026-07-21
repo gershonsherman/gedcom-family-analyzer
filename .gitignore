@@ -40,5 +40,5 @@ Thumbs.db
 # HTML output files
 *.html
 
-# Geni API response cache
-geni-cache/
+# Geni API response cache (one dir per tree, e.g. geni-cache-<name>)
+geni-cache*/

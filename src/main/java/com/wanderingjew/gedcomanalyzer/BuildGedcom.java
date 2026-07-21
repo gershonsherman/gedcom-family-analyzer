@@ -1,7 +1,6 @@
 package com.wanderingjew.gedcomanalyzer;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 /**
  * Step 2a on its own: assemble a GEDCOM from the geni-cache without any network
@@ -23,7 +22,8 @@ public class BuildGedcom {
         int maxGenerations = Integer.parseInt(args[1]);
         String outputFile = args[2];
 
-        Path cacheDir = Paths.get("geni-cache");
+        Path cacheDir = GeniClient.cacheDirFromEnv();
+        System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
         GeniClient client = new GeniClient("OFFLINE", cacheDir, 0);
         client.setOffline(true);
 

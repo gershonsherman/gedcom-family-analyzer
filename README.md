@@ -301,6 +301,17 @@ API rate limit (as low as 1 request / 10 s for a new, unapproved app) and can be
 **resumed** by re-running the same command with a fresh token — cached profiles are
 skipped, so no work is lost when a token expires.
 
+For an **unrelated tree** (a person who shares no ancestors with a previous fetch),
+use a separate cache directory so the caches don't intermingle. Set `GENI_CACHE_DIR`
+(default `geni-cache`) — all four tools honour it:
+
+```bash
+export GENI_CACHE_DIR=geni-cache-<name>
+```
+
+(The built GEDCOM is always scoped to the start person's ancestors regardless, but a
+separate cache keeps unrelated trees cleanly apart and easy to manage.)
+
 The cache is the real asset; these offline tools rebuild from it **without a token**,
 and are safe to run even while a fetch is still going:
 

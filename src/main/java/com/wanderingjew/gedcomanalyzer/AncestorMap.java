@@ -1,7 +1,6 @@
 package com.wanderingjew.gedcomanalyzer;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -26,7 +25,8 @@ public class AncestorMap {
         int maxGenerations = Integer.parseInt(args[1]);
         String outputFile = args[2];
 
-        Path cacheDir = Paths.get("geni-cache");
+        Path cacheDir = GeniClient.cacheDirFromEnv();
+        System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
         GeniClient client = new GeniClient("OFFLINE", cacheDir, 0);
         client.setOffline(true);
         GeniAncestorFetcher fetcher = new GeniAncestorFetcher(client);

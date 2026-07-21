@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 
 /**
@@ -57,6 +58,16 @@ public class GeniClient {
         this.cacheDir = cacheDir;
         this.requestDelayMs = requestDelayMs;
         Files.createDirectories(cacheDir);
+    }
+
+    /**
+     * The cache directory to use: the GENI_CACHE_DIR environment variable if set,
+     * otherwise "geni-cache". Keep a separate directory per unrelated tree so their
+     * caches don't intermingle.
+     */
+    public static Path cacheDirFromEnv() {
+        String dir = System.getenv("GENI_CACHE_DIR");
+        return Paths.get(dir == null || dir.trim().isEmpty() ? "geni-cache" : dir.trim());
     }
 
     public int getRequestCount() { return requestCount; }
