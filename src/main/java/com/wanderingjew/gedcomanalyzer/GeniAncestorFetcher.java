@@ -81,6 +81,15 @@ public class GeniAncestorFetcher {
                 }
                 JsonNode focus = root.get("focus");
                 if (focus == null) {
+                    // A valid immediate-family response always has a focus. If instead the
+                    // body carries an error message (e.g. an expired token), surface it
+                    // rather than silently skipping — otherwise the run ends with 0 people
+                    // and no explanation.
+                    JsonNode message = root.get("message");
+                    if (message != null && !message.isNull()) {
+                        throw new IOException("Geni API error for profile " + entry.id + ": "
+                                + message.asText() + " — is your access token valid?");
+                    }
                     continue;
                 }
 
@@ -232,8 +241,12 @@ public class GeniAncestorFetcher {
     }
 
     private void writeCheckpoint() {
+        GedcomData snapshot = snapshot();
+        // Don't clobber the output with an empty file (e.g. when a run fails immediately).
+        if (snapshot.getPersonCount() == 0) {
+            return;
+        }
         try {
-            GedcomData snapshot = snapshot();
             writer.write(snapshot, checkpointPath);
             System.out.println("  Checkpoint: wrote " + snapshot.getPersonCount()
                     + " persons to " + checkpointPath);

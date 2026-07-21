@@ -1,6 +1,7 @@
 package com.wanderingjew.gedcomanalyzer;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -14,9 +15,10 @@ import java.util.List;
 public class AncestorMap {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
-            System.out.println("Usage: AncestorMap <start-id> <max-generations> <output.html>");
-            System.out.println("  Builds an ancestor map from the geni-cache only (no fetching, no token).");
+        if (args.length < 3 || args.length > 4) {
+            System.out.println("Usage: AncestorMap <start-id> <max-generations> <output.html> [cache-dir]");
+            System.out.println("  Builds an ancestor map from the cache only (no fetching, no token).");
+            System.out.println("  cache-dir: optional cache directory (default ./geni-cache).");
             System.out.println("  Run it any time — even while GeniFetch is still running — for a partial map.");
             System.exit(1);
         }
@@ -25,7 +27,7 @@ public class AncestorMap {
         int maxGenerations = Integer.parseInt(args[1]);
         String outputFile = args[2];
 
-        Path cacheDir = GeniClient.cacheDirFromEnv();
+        Path cacheDir = args.length > 3 ? Paths.get(args[3]) : GeniClient.cacheDirFromEnv();
         System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
         GeniClient client = new GeniClient("OFFLINE", cacheDir, 0);
         client.setOffline(true);

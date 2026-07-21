@@ -2,6 +2,7 @@ package com.wanderingjew.gedcomanalyzer;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * CLI entry point that pulls a person's ancestry from the Geni API and writes it
@@ -13,14 +14,14 @@ public class GeniFetch {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3 || args.length > 4) {
-            System.out.println("Usage: GeniFetch <start-id> <max-generations> <output.ged> [request-delay-ms]");
+            System.out.println("Usage: GeniFetch <start-id> <max-generations> <output.ged> [cache-dir]");
             System.out.println("  start-id:         Geni guid (e.g. 6000000031619060876), guid form (g...), or numeric profile id");
             System.out.println("  max-generations:  how many generations up to fetch (0 = unlimited)");
             System.out.println("  output.ged:       path to write the assembled GEDCOM");
-            System.out.println("  request-delay-ms: optional pause between API calls (default 300)");
+            System.out.println("  cache-dir:        optional cache directory (default ./geni-cache); use a separate");
+            System.out.println("                    one per unrelated tree so their caches don't intermingle");
             System.out.println();
             System.out.println("  The Geni access token is read from the GENI_ACCESS_TOKEN environment variable.");
-            System.out.println("  Responses are cached under ./geni-cache so reruns and token refreshes are cheap.");
             System.exit(1);
         }
 
@@ -34,16 +35,14 @@ public class GeniFetch {
         String startId = args[0];
         int maxGenerations = Integer.parseInt(args[1]);
         String outputFile = args[2];
-        long delayMs = args.length > 3 ? Long.parseLong(args[3]) : 300L;
+        Path cacheDir = args.length > 3 ? Paths.get(args[3]) : GeniClient.cacheDirFromEnv();
 
-        Path cacheDir = GeniClient.cacheDirFromEnv();
         System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
         System.out.println("Fetching ancestors of " + startId
                 + (maxGenerations > 0 ? " up to " + maxGenerations + " generations" : " (unlimited)") + "...");
-        System.out.println("Responses cache under " + cacheDir.toAbsolutePath()
-                + " — rerun with a fresh token to resume where this left off.");
+        System.out.println("Rerun the same command with a fresh token to resume where this left off.");
 
-        GeniClient client = new GeniClient(token.trim(), cacheDir, delayMs);
+        GeniClient client = new GeniClient(token.trim(), cacheDir, 300L);
         GeniAncestorFetcher fetcher = new GeniAncestorFetcher(client);
         fetcher.enableCheckpoint(outputFile, 200);
 
@@ -63,16 +62,25 @@ public class GeniFetch {
 
         try {
             GedcomData data = fetcher.fetch(startId, maxGenerations);
+            if (data.getPersonCount() == 0) {
+                System.out.println();
+                System.out.println("WARNING: 0 people were fetched — nothing was written.");
+                System.out.println("Most likely your access token is invalid or expired, or the start id is wrong.");
+                System.out.println("Get a fresh token (export GENI_ACCESS_TOKEN) and check the guid, then rerun.");
+                System.exit(3);
+            }
             System.out.println("Assembled " + data.getPersonCount() + " persons and "
                     + data.getFamilyCount() + " families.");
             new GedcomWriter().write(data, outputFile);
             System.out.println("GEDCOM written to: " + outputFile);
         } catch (IOException e) {
-            // Most commonly a 401 when the 24-hour token expires mid-run.
+            // Most commonly an invalid/expired token (401) — surfaced clearly here.
             System.err.println();
-            System.err.println("Fetch stopped: " + e.getMessage());
-            System.err.println("Progress is cached. Get a fresh token, re-export GENI_ACCESS_TOKEN,");
-            System.err.println("and run the exact same command again to resume from where it stopped.");
+            System.err.println("=======================================================================");
+            System.err.println(" FETCH STOPPED: " + e.getMessage());
+            System.err.println("=======================================================================");
+            System.err.println("If this is a token problem, get a fresh token, re-export GENI_ACCESS_TOKEN,");
+            System.err.println("and run the exact same command again — cached progress is kept.");
             System.exit(2);
         }
     }

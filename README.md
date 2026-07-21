@@ -302,11 +302,12 @@ API rate limit (as low as 1 request / 10 s for a new, unapproved app) and can be
 skipped, so no work is lost when a token expires.
 
 For an **unrelated tree** (a person who shares no ancestors with a previous fetch),
-use a separate cache directory so the caches don't intermingle. Set `GENI_CACHE_DIR`
-(default `geni-cache`) — all four tools honour it:
+pass a separate cache directory as the optional last argument so the caches don't
+intermingle (default `geni-cache`). All three tools accept it:
 
 ```bash
-export GENI_CACHE_DIR=geni-cache-<name>
+java -cp target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar \
+  com.wanderingjew.gedcomanalyzer.GeniFetch <start-guid> 100 output/ancestors.ged geni-cache-<name>
 ```
 
 (The built GEDCOM is always scoped to the start person's ancestors regardless, but a

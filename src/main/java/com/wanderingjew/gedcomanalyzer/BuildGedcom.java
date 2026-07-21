@@ -1,6 +1,7 @@
 package com.wanderingjew.gedcomanalyzer;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * Step 2a on its own: assemble a GEDCOM from the geni-cache without any network
@@ -11,9 +12,10 @@ import java.nio.file.Path;
 public class BuildGedcom {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
-            System.out.println("Usage: BuildGedcom <start-id> <max-generations> <output.ged>");
-            System.out.println("  Assembles a GEDCOM from the geni-cache only (no fetching, no token).");
+        if (args.length < 3 || args.length > 4) {
+            System.out.println("Usage: BuildGedcom <start-id> <max-generations> <output.ged> [cache-dir]");
+            System.out.println("  Assembles a GEDCOM from the cache only (no fetching, no token).");
+            System.out.println("  cache-dir: optional cache directory (default ./geni-cache).");
             System.out.println("  Run it any time — even while GeniFetch is still running — for a partial tree.");
             System.exit(1);
         }
@@ -22,7 +24,7 @@ public class BuildGedcom {
         int maxGenerations = Integer.parseInt(args[1]);
         String outputFile = args[2];
 
-        Path cacheDir = GeniClient.cacheDirFromEnv();
+        Path cacheDir = args.length > 3 ? Paths.get(args[3]) : GeniClient.cacheDirFromEnv();
         System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
         GeniClient client = new GeniClient("OFFLINE", cacheDir, 0);
         client.setOffline(true);
