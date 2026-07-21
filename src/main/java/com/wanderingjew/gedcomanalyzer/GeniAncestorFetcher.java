@@ -418,14 +418,24 @@ public class GeniAncestorFetcher {
         p.setBirthPlace(d.birthPlace);
         // Apply manual coordinate corrections for places Geni geocoded wrongly.
         double[] birthOverride = PlaceOverrides.get().lookup(d.birthPlace);
-        p.setBirthLatitude(birthOverride != null ? birthOverride[0] : d.birthLat);
-        p.setBirthLongitude(birthOverride != null ? birthOverride[1] : d.birthLng);
+        if (birthOverride != null) {
+            p.setBirthLatitude(birthOverride[0]);
+            p.setBirthLongitude(birthOverride[1]);
+        } else {
+            p.setBirthLatitude(d.birthLat);
+            p.setBirthLongitude(d.birthLng);
+        }
 
         p.setDeathDate(d.deathDate);
         p.setDeathPlace(d.deathPlace);
         double[] deathOverride = PlaceOverrides.get().lookup(d.deathPlace);
-        p.setDeathLatitude(deathOverride != null ? deathOverride[0] : d.deathLat);
-        p.setDeathLongitude(deathOverride != null ? deathOverride[1] : d.deathLng);
+        if (deathOverride != null) {
+            p.setDeathLatitude(deathOverride[0]);
+            p.setDeathLongitude(deathOverride[1]);
+        } else {
+            p.setDeathLatitude(d.deathLat);
+            p.setDeathLongitude(d.deathLng);
+        }
         return p;
     }
 
