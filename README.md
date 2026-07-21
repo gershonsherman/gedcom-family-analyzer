@@ -16,6 +16,9 @@ A Java utility for reading GEDCOM 5.5.1 files and displaying family relationship
 - **Multiple Output Formats**: 
   - Console output for quick viewing
   - HTML output with enhanced formatting and larger fonts
+- **Geni API Fetching**: Pull a person's full ancestry directly from Geni.com (beyond the
+  size-limited export), with coordinates and a generation-coloured ancestor map — see
+  [Fetching Ancestry from the Geni API](#fetching-ancestry-from-the-geni-api)
 - **Name Preference**: Automatically prefers English names over Hebrew/foreign language names when multiple NAME records exist
 - **Comprehensive Output**: Displays names, IDs, and life dates for all relatives
 - **Command Line Interface**: Easy to use from the command line
@@ -237,6 +240,103 @@ java -jar target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar "materna
 ```
 
 This will show all relationships from both sides of the family in a single analysis.
+
+## Fetching Ancestry from the Geni API
+
+Geni.com's GEDCOM export is limited in how deep it goes. To pull a person's full
+ancestry — with coordinates for mapping and Geni's own display names — the project
+can fetch directly from the Geni REST API and assemble its own GEDCOM.
+
+### One-time: register a Geni application
+
+1. Log in to Geni and open <https://www.geni.com/platform/developer/apps>.
+2. Click **Register New Application**, and set both the **Site URL** and **Callback
+   URL** to a domain you control (e.g. `https://wanderingjew.info`). `localhost` is
+   often rejected.
+3. Copy the **Application key** — this is your `client_id`.
+
+### Each session: get an access token
+
+Geni access tokens last about 24 hours. In a browser where you are logged in to
+Geni, paste the following, replacing `YOUR_APP_KEY` and the redirect with your
+registered callback URL:
+
+```
+https://www.geni.com/platform/oauth/authorize?client_id=YOUR_APP_KEY&redirect_uri=https://wanderingjew.info&response_type=token
+```
+
+Approve the prompt. Your browser redirects to your callback and the **address bar**
+ends with:
+
+```
+https://wanderingjew.info/#access_token=XXXXXXXX&expires_in=NNNN
+```
+
+Copy the value between `access_token=` and `&`, then export it:
+
+```bash
+export GENI_ACCESS_TOKEN='XXXXXXXX'
+```
+
+(Optional) confirm the token works — replace `<GUID>` with any Geni guid:
+
+```bash
+curl -s "https://www.geni.com/api/profile-g<GUID>/immediate-family?access_token=$GENI_ACCESS_TOKEN" | head
+```
+
+### Fetch and build
+
+The start id is a Geni **guid** — the number in a `1 RFN geni:<guid>` line, or the
+trailing number in a Geni profile URL.
+
+```bash
+# Fetch ancestry from the API and write a GEDCOM (requires GENI_ACCESS_TOKEN).
+# Args: <start-guid> <max-generations> <output.ged>
+java -cp target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar \
+  com.wanderingjew.gedcomanalyzer.GeniFetch <start-guid> 100 output/ancestors.ged
+```
+
+Responses are cached under `geni-cache/` (git-ignored). The fetch self-paces to the
+API rate limit (as low as 1 request / 10 s for a new, unapproved app) and can be
+**resumed** by re-running the same command with a fresh token — cached profiles are
+skipped, so no work is lost when a token expires.
+
+The cache is the real asset; these offline tools rebuild from it **without a token**,
+and are safe to run even while a fetch is still going:
+
+```bash
+# Assemble a GEDCOM from the cache only (offline).
+java -cp target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar \
+  com.wanderingjew.gedcomanalyzer.BuildGedcom <start-guid> 100 output/ancestors.ged
+
+# Build a standalone Leaflet/OpenStreetMap map of the ancestors, coloured by generation.
+java -cp target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar \
+  com.wanderingjew.gedcomanalyzer.AncestorMap <start-guid> 100 output/ancestors-map.html
+```
+
+Feed the assembled GEDCOM into the main analyzer as usual to get the HTML report
+(which embeds an ancestor map when the GEDCOM has coordinates).
+
+### Refreshing a person after editing on Geni
+
+After you correct a profile on Geni, drop its cache file so the next fetch
+re-downloads the updated data (leaving the rest of the cache intact):
+
+```bash
+java -cp target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar \
+  com.wanderingjew.gedcomanalyzer.InvalidateCache <guid> [<guid> ...]
+```
+
+### Correcting bad coordinates
+
+Geni sometimes geocodes a place to the wrong spot (e.g. "Babylon" → Babylon, NY).
+Add a **tab-separated** line to `place-overrides.tsv` and rebuild — matching places
+then use your coordinates instead of Geni's:
+
+```
+# place substring   latitude   longitude
+Babylon              32.5355    44.4275
+```
 
 ## Limitations
 
