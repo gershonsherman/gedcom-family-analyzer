@@ -42,3 +42,6 @@ Thumbs.db
 
 # Geni API response cache (one dir per tree, e.g. geni-cache-<name>)
 geni-cache*/
+
+# Local symlink to the GEDCOM folder (machine-specific)
+/gedcoms
