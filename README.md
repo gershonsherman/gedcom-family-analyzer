@@ -72,9 +72,19 @@ java -jar target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar "family1
 java -jar target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar "family1.ged,family2.ged" @I1@ combined_analysis.html
 ```
 
+### Directory Input
+
+Instead of listing files, you can pass a **directory** and the analyzer will use every
+`.ged` file inside it (sorted alphabetically). This keeps command lines and launch
+configs short:
+
+```bash
+java -jar target/gedcom-family-analyzer-1.0.0-jar-with-dependencies.jar "path/to/gedcom-folder" @I1@ output/report.html
+```
+
 ### Parameters
 
-- `gedcom-files`: Path to the GEDCOM file(s) to analyze - single file or comma-separated list
+- `gedcom-files`: a directory (every `*.ged` inside it), a single file, or a comma-separated list
 - `person-id`: The GEDCOM ID of the person to analyze (e.g., `@I1@`, `@F1@`)
 - `html-output-file`: Optional path to HTML output file for enhanced formatting
 

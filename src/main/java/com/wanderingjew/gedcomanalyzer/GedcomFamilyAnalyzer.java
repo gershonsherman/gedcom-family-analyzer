@@ -18,14 +18,15 @@ public class GedcomFamilyAnalyzer {
     public static void main(String[] args) {
         if (args.length < 2 || args.length > 3) {
             System.out.println("Usage: java -jar gedcom-family-analyzer.jar <gedcom-files> <person-id> [html-output-file]");
-            System.out.println("  gedcom-files: Path to the GEDCOM file(s) - single file or comma-separated list");
+            System.out.println("  gedcom-files: a directory (uses every *.ged inside it), a single file,");
+            System.out.println("                or a comma-separated list of files");
             System.out.println("  person-id: ID of the person to analyze (with or without @ symbols)");
             System.out.println("  html-output-file: Optional path to HTML output file");
             System.out.println();
             System.out.println("Examples:");
-            System.out.println("  Single file: java -jar gedcom-family-analyzer.jar family1.ged I1");
+            System.out.println("  Directory:      java -jar gedcom-family-analyzer.jar \"path/to/gedcoms\" I1 output.html");
+            System.out.println("  Single file:    java -jar gedcom-family-analyzer.jar family1.ged I1");
             System.out.println("  Multiple files: java -jar gedcom-family-analyzer.jar \"family1.ged,family2.ged\" I1");
-            System.out.println("  With HTML output: java -jar gedcom-family-analyzer.jar \"family1.ged,family2.ged\" I1 output.html");
             System.exit(1);
         }
         
@@ -49,35 +50,21 @@ public class GedcomFamilyAnalyzer {
             // Parse GEDCOM file(s)
             System.out.println("Parsing GEDCOM file(s)...");
             GedcomParser parser = new GedcomParser();
-            GedcomData gedcomData;
-            
-            if (gedcomFiles.contains(",")) {
-                // Multiple files - first strip outer quotes from entire string
-                String cleanedFiles = gedcomFiles.trim();
-                if (cleanedFiles.startsWith("\"") && cleanedFiles.endsWith("\"")) {
-                    cleanedFiles = cleanedFiles.substring(1, cleanedFiles.length() - 1);
-                }
-                
-                String[] filePaths = cleanedFiles.split(",");
-                List<String> fileList = new ArrayList<>();
-                for (String filePath : filePaths) {
-                    // Remove surrounding quotes and trim whitespace
-                    String cleanedPath = filePath.trim();
-                    if (cleanedPath.startsWith("\"") && cleanedPath.endsWith("\"")) {
-                        cleanedPath = cleanedPath.substring(1, cleanedPath.length() - 1);
-                    }
-                    fileList.add(cleanedPath);
-                }
-                gedcomData = parser.parseMultipleFiles(fileList);
-            } else {
-                // Single file - also need to strip quotes
-                String cleanedFile = gedcomFiles.trim();
-                if (cleanedFile.startsWith("\"") && cleanedFile.endsWith("\"")) {
-                    cleanedFile = cleanedFile.substring(1, cleanedFile.length() - 1);
-                }
-                gedcomData = parser.parseFile(cleanedFile);
+
+            List<String> fileList = resolveGedcomFiles(gedcomFiles);
+            if (fileList.isEmpty()) {
+                System.out.println("Error: no GEDCOM (.ged) files found for '" + gedcomFiles + "'.");
+                System.exit(1);
             }
-            
+            System.out.println("GEDCOM files (" + fileList.size() + "):");
+            for (String f : fileList) {
+                System.out.println("  " + f);
+            }
+
+            GedcomData gedcomData = fileList.size() == 1
+                    ? parser.parseFile(fileList.get(0))
+                    : parser.parseMultipleFiles(fileList);
+
             System.out.println("Found " + gedcomData.getPersonCount() + " persons and " + gedcomData.getFamilyCount() + " families.");
             System.out.println();
             
@@ -115,6 +102,43 @@ public class GedcomFamilyAnalyzer {
         }
     }
     
+    /**
+     * Resolve the first argument into a list of GEDCOM file paths. Accepts a directory
+     * (all *.ged files inside it, sorted), a comma-separated list, or a single file.
+     * Surrounding quotes are stripped so shell-quoted arguments work too.
+     */
+    private List<String> resolveGedcomFiles(String input) {
+        String cleaned = stripQuotes(input.trim());
+        List<String> files = new ArrayList<>();
+
+        File asDir = new File(cleaned);
+        if (asDir.isDirectory()) {
+            File[] geds = asDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".ged"));
+            if (geds != null) {
+                java.util.Arrays.sort(geds);
+                for (File f : geds) {
+                    files.add(f.getPath());
+                }
+            }
+            return files;
+        }
+
+        for (String part : cleaned.split(",")) {
+            String path = stripQuotes(part.trim());
+            if (!path.isEmpty()) {
+                files.add(path);
+            }
+        }
+        return files;
+    }
+
+    private String stripQuotes(String s) {
+        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
+            return s.substring(1, s.length() - 1);
+        }
+        return s;
+    }
+
     private void displayConsoleOutput(FamilyRelationshipAnalyzer analyzer, Person targetPerson, GedcomData gedcomData) {
         displayAncestors(analyzer, targetPerson);
         displayDescendants(analyzer, targetPerson);
