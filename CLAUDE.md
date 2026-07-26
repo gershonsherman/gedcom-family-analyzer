@@ -109,6 +109,14 @@ These are git-ignored and won't come from a clone:
 
 ## Open / possible next steps
 
+- **Cousin/descendant fetcher (planned next major feature).** Geni's GEDCOM export is
+  capped (~1,800 profiles), which truncates distant cousins — a "missing" 3rd/4th cousin
+  is simply not in the exported files. Plan: a fetcher that goes UP to the Nth-great-
+  grandparents (default 4th = gen 6, → up to 5th cousins) and then DOWN through ALL their
+  descendants. Reuses `immediate-family` (a person's partner-unions give their children)
+  plus the existing cache/offline/GEDCOM code. Make the "up" depth a parameter (cousin
+  degree vs. fetch time). NOTE: descendant runs can be many thousands of profiles — much
+  bigger than an ancestor run — so a higher rate limit really matters here.
 - Optional: request a higher Geni rate limit (email `api@geni.com`).
 - Optional: Google Geocoding fallback for places Geni left WITHOUT any coordinates
   (distinct from `place-overrides.tsv`, which fixes WRONG coordinates).
