@@ -126,6 +126,11 @@ clone just symlinks to it, so both machines share the same data without putting 
 it in git:
 - `.vscode/launch.json` — per-person run configs (has family names/IDs; kept local, one
   copy per machine — not synced via Drive or git).
+- `.vscode/settings.json` — excludes `gedcoms`/`geni-cache`/`output` from VS Code's file
+  watcher and search indexer. **Recreate this on every machine** — without it, VS Code
+  recursively walks those Drive symlinks on startup and can take a very long time to
+  open the window (or appear to hang with no error), since Drive's cloud filesystem is
+  slow (see Findings below).
 - `gedcoms` — a symlink to the **parent** folder containing the GEDCOM files (not the
   `Gedcom files/` subfolder itself — `launch.json`'s args are `gedcoms/Gedcom files/…`,
   `gedcoms/Ancestor Maps/…`, `gedcoms/Family Analyzer Reports/…`):
