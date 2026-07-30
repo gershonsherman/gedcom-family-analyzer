@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -18,6 +19,13 @@ import java.util.Set;
  * into a {@link GedcomData} model. Traversal follows, for each profile, the union
  * in which the profile is a "child"; the "partner" profiles of that union are its
  * parents, which are then queued for fetching.
+ *
+ * <p>Optionally ({@link #fetchWithDescendants}) it continues past the ancestors: every
+ * "boundary" ancestor — one whose own parents weren't fetched, either because the
+ * generation cap was hit or Geni's data simply ends there — is used as the root of a
+ * downward walk through all of their descendants. Since nearer ancestors' descendant
+ * trees are subsets of a boundary ancestor's, this single downward pass recovers
+ * cousins, aunts/uncles, etc. at every remove without walking each line separately.
  */
 public class GeniAncestorFetcher {
 
@@ -36,6 +44,15 @@ public class GeniAncestorFetcher {
     // Numeric union id -> Geni union guid (which matches the family id in Geni's own
     // GEDCOM export), so our output merges cleanly with those exports.
     private final Map<String, String> unionGuid = new HashMap<>();
+    // Reverse index of unionPartners: numeric profile id -> unions where they're a partner.
+    // Used by descend() to find a person's own marriages (and, through them, their children).
+    private final Map<String, Set<String>> profileUnions = new HashMap<>();
+
+    // Every profile id we've fetched as its own focus, across both ascend and descend.
+    private final Set<String> visited = new LinkedHashSet<>();
+    // The numeric id of the original start person (generation 0 during ascend), used to
+    // anchor the ancestor-positions walk even after descend() adds other generation-0 people.
+    private String startNumericId;
 
     private final GedcomWriter writer = new GedcomWriter();
     private String checkpointPath;
@@ -63,9 +80,42 @@ public class GeniAncestorFetcher {
      * ("g6000000031619060876"), or a numeric profile id.
      */
     public GedcomData fetch(String startId, int maxGenerations) throws IOException, InterruptedException {
+        ascend(startId, maxGenerations);
+        System.out.println("Fetched " + profiles.size() + " profiles total ("
+                + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits).");
+        printGenerationHistogram();
+        return buildGedcomData();
+    }
+
+    /**
+     * Fetch ancestors of the start profile up to {@code upGenerations} (0 = unlimited),
+     * then descend from every "boundary" ancestor — one whose own parents weren't
+     * fetched — through all of their descendants, recovering cousins, aunts/uncles,
+     * etc. In-laws (partners who married into the line) are fetched for their own
+     * name/details but never traversed past, so the walk stays confined to blood
+     * descendants of the boundary ancestors.
+     */
+    public GedcomData fetchWithDescendants(String startId, int upGenerations) throws IOException, InterruptedException {
+        Set<String> boundary = ascend(startId, upGenerations);
+        System.out.println("Ancestor fetch reached " + boundary.size()
+                + (boundary.size() == 1 ? " boundary line" : " boundary lines")
+                + "; descending to find their descendants...");
+        descend(boundary);
+        System.out.println("Fetched " + profiles.size() + " profiles total ("
+                + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits).");
+        printGenerationHistogram();
+        return buildGedcomData();
+    }
+
+    /**
+     * BFS upward from {@code startId}. Returns the "boundary" set: profiles whose own
+     * parents weren't fetched, either because {@code maxGenerations} was reached or
+     * because Geni's data simply has no further parents recorded.
+     */
+    private Set<String> ascend(String startId, int maxGenerations) throws IOException, InterruptedException {
         Queue<QueueEntry> queue = new ArrayDeque<>();
         Set<String> queued = new HashSet<>();
-        Set<String> visited = new HashSet<>();
+        Set<String> boundary = new LinkedHashSet<>();
 
         String start = normalizeStart(startId);
         queue.add(new QueueEntry(start, 0));
@@ -74,54 +124,26 @@ public class GeniAncestorFetcher {
         try {
             while (!queue.isEmpty()) {
                 QueueEntry entry = queue.poll();
-                JsonNode root = client.immediateFamily(entry.id);
-                if (root == null) {
-                    // Offline mode and this profile isn't cached yet — skip it (partial result).
+                String numericId = fetchProfile(entry.id, entry.generation);
+                if (numericId == null) {
                     continue;
                 }
-                JsonNode focus = root.get("focus");
-                if (focus == null) {
-                    // A valid immediate-family response always has a focus. If instead the
-                    // body carries an error message (e.g. an expired token), surface it
-                    // rather than silently skipping — otherwise the run ends with 0 people
-                    // and no explanation.
-                    JsonNode message = root.get("message");
-                    if (message != null && !message.isNull()) {
-                        throw new IOException("Geni API error for profile " + entry.id + ": "
-                                + message.asText() + " — is your access token valid?");
-                    }
-                    continue;
+                if (entry.generation == 0 && startNumericId == null) {
+                    startNumericId = numericId;
                 }
+                ProfileData data = profiles.get(numericId);
 
-                String numericId = stripPrefix(focus.path("id").asText());
-                if (numericId.isEmpty() || visited.contains(numericId)) {
-                    continue;
-                }
-                visited.add(numericId);
+                Set<String> parentIds = data.childUnionId == null
+                        ? Collections.emptySet()
+                        : new LinkedHashSet<>(unionPartners.getOrDefault(data.childUnionId, Collections.emptySet()));
+                parentIds.remove(numericId);
 
-                ProfileData data = parseFocus(focus);
-                data.generation = entry.generation;
-                accumulateUnions(root.get("nodes"));
-                data.childUnionId = findChildUnion(root.get("nodes"), numericId);
-                synchronized (this) {
-                    profiles.put(numericId, data);
+                boolean reachedCap = maxGenerations > 0 && entry.generation >= maxGenerations;
+                if (data.childUnionId == null || parentIds.isEmpty() || reachedCap) {
+                    boundary.add(numericId);
                 }
-
-                if (profiles.size() % 25 == 0) {
-                    System.out.println("  Fetched " + profiles.size() + " profiles (generation "
-                            + entry.generation + ", " + client.getCacheHits() + " from cache)...");
-                }
-                if (checkpointEvery > 0 && checkpointPath != null && profiles.size() % checkpointEvery == 0) {
-                    writeCheckpoint();
-                }
-
-                // Enqueue parents (partners of the union in which this profile is a child).
-                if (data.childUnionId != null && (maxGenerations <= 0 || entry.generation < maxGenerations)) {
-                    Set<String> parents = unionPartners.getOrDefault(data.childUnionId, new LinkedHashSet<>());
-                    for (String parentId : parents) {
-                        if (parentId.equals(numericId)) {
-                            continue;
-                        }
+                if (!reachedCap) {
+                    for (String parentId : parentIds) {
                         if (!queued.contains(parentId) && !visited.contains(parentId)) {
                             queue.add(new QueueEntry(parentId, entry.generation + 1));
                             queued.add(parentId);
@@ -135,11 +157,118 @@ public class GeniAncestorFetcher {
                 writeCheckpoint();
             }
         }
+        return boundary;
+    }
 
-        System.out.println("Fetched " + profiles.size() + " profiles total ("
-                + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits).");
-        printGenerationHistogram();
-        return buildGedcomData();
+    /**
+     * BFS downward from each boundary ancestor, following every union they're a
+     * partner in to reach their children, grandchildren, etc. The spouse in each such
+     * union is fetched for their own details but not traversed further — only the
+     * boundary ancestors' own bloodline continues down the queue.
+     */
+    private void descend(Set<String> boundary) throws IOException, InterruptedException {
+        Queue<QueueEntry> queue = new ArrayDeque<>();
+        Set<String> queued = new HashSet<>();
+
+        for (String rootId : boundary) {
+            ProfileData root = profiles.get(rootId);
+            if (root == null) {
+                continue;
+            }
+            queue.add(new QueueEntry(rootId, root.generation));
+            queued.add(rootId);
+        }
+
+        try {
+            while (!queue.isEmpty()) {
+                QueueEntry entry = queue.poll();
+                String numericId = entry.id;
+                int generation;
+                if (visited.contains(numericId)) {
+                    // Already fetched (e.g. a direct ancestor visited during ascend) — no
+                    // need to refetch, but still expand their unions below so siblings and
+                    // their own descendants aren't missed. Use its authoritative generation
+                    // rather than the value computed along this particular descent path.
+                    generation = profiles.get(numericId).generation;
+                } else {
+                    numericId = fetchProfile(entry.id, entry.generation);
+                    if (numericId == null) {
+                        continue;
+                    }
+                    generation = entry.generation;
+                }
+
+                for (String unionId : profileUnions.getOrDefault(numericId, Collections.emptySet())) {
+                    for (String partnerId : unionPartners.getOrDefault(unionId, Collections.emptySet())) {
+                        if (!partnerId.equals(numericId) && !visited.contains(partnerId)) {
+                            // Fetch the in-law fully (for their name/details) but don't
+                            // enqueue them — they're not a blood descendant of the boundary.
+                            fetchProfile(partnerId, generation);
+                        }
+                    }
+                    for (String childId : unionChildren.getOrDefault(unionId, Collections.emptySet())) {
+                        if (!queued.contains(childId)) {
+                            queue.add(new QueueEntry(childId, generation - 1));
+                            queued.add(childId);
+                        }
+                    }
+                }
+            }
+        } finally {
+            if (checkpointPath != null) {
+                writeCheckpoint();
+            }
+        }
+    }
+
+    /**
+     * Fetch a single profile as its own focus (full detail), recording it at the given
+     * generation and accumulating any union edges found in the response. Returns the
+     * profile's resolved numeric id, or null if it's unavailable (offline cache miss)
+     * or was already fetched via another path.
+     */
+    private String fetchProfile(String id, int generation) throws IOException, InterruptedException {
+        JsonNode root = client.immediateFamily(id);
+        if (root == null) {
+            // Offline mode and this profile isn't cached yet — skip it (partial result).
+            return null;
+        }
+        JsonNode focus = root.get("focus");
+        if (focus == null) {
+            // A valid immediate-family response always has a focus. If instead the
+            // body carries an error message (e.g. an expired token), surface it
+            // rather than silently skipping — otherwise the run ends quietly
+            // incomplete with no explanation.
+            JsonNode message = root.get("message");
+            if (message != null && !message.isNull()) {
+                throw new IOException("Geni API error for profile " + id + ": "
+                        + message.asText() + " — is your access token valid?");
+            }
+            return null;
+        }
+
+        String numericId = stripPrefix(focus.path("id").asText());
+        if (numericId.isEmpty() || visited.contains(numericId)) {
+            return null;
+        }
+        visited.add(numericId);
+
+        ProfileData data = parseFocus(focus);
+        data.generation = generation;
+        accumulateUnions(root.get("nodes"));
+        data.childUnionId = findChildUnion(root.get("nodes"), numericId);
+        synchronized (this) {
+            profiles.put(numericId, data);
+        }
+
+        if (profiles.size() % 25 == 0) {
+            System.out.println("  Fetched " + profiles.size() + " profiles (generation "
+                    + generation + ", " + client.getCacheHits() + " from cache)...");
+        }
+        if (checkpointEvery > 0 && checkpointPath != null && profiles.size() % checkpointEvery == 0) {
+            writeCheckpoint();
+        }
+        return numericId;
     }
 
     /**
@@ -165,13 +294,12 @@ public class GeniAncestorFetcher {
     /** Count ahnentafel positions (distinct root-to-ancestor paths) per generation. */
     private java.util.Map<Integer, Long> computePositionCounts() {
         java.util.Map<Integer, Long> counts = new java.util.TreeMap<>();
-        String root = null;
+        // Anchored on the actual start person, not "whoever has generation 0" — once
+        // fetchWithDescendants runs, distant cousins can land on generation 0 too.
+        String root = startNumericId;
         int maxGen = 0;
-        for (java.util.Map.Entry<String, ProfileData> e : profiles.entrySet()) {
-            if (e.getValue().generation == 0) {
-                root = e.getKey();
-            }
-            maxGen = Math.max(maxGen, e.getValue().generation);
+        for (ProfileData d : profiles.values()) {
+            maxGen = Math.max(maxGen, d.generation);
         }
         if (root == null) {
             return counts;
@@ -319,6 +447,7 @@ public class GeniAncestorFetcher {
                 String rel = edge.getValue().path("rel").asText();
                 if ("partner".equals(rel)) {
                     unionPartners.computeIfAbsent(unionId, k -> new LinkedHashSet<>()).add(profileId);
+                    profileUnions.computeIfAbsent(profileId, k -> new LinkedHashSet<>()).add(unionId);
                 } else if ("child".equals(rel)) {
                     unionChildren.computeIfAbsent(unionId, k -> new LinkedHashSet<>()).add(profileId);
                 }

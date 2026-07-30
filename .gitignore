@@ -40,8 +40,14 @@ Thumbs.db
 # HTML output files
 *.html
 
-# Geni API response cache (one dir per tree, e.g. geni-cache-<name>)
+# Geni API response cache (one dir per tree, e.g. geni-cache-<name>). Matches both a
+# real local directory and a symlink to one on Drive (a trailing-slash pattern alone
+# doesn't match a symlink, since git doesn't treat it as a directory for matching).
 geni-cache*/
+geni-cache*
 
 # Local symlink to the GEDCOM folder (machine-specific)
 /gedcoms
+
+# Local symlink to the output-reports folder on Drive (machine-specific)
+/output

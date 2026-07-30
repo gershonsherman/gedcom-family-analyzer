@@ -37,14 +37,29 @@ Main analyzer:
   on-disk cache `geni-cache/<id>.v2.json` (git-ignored; bump `CACHE_VERSION` if the
   requested `fields` change); adaptive pacing off `X-API-Rate-*` headers;
   `setOffline(true)` = cache-only (returns null on miss). `cacheDirFromEnv()` default.
-- `GeniAncestorFetcher` — BFS **upward**: the union where the focus has `rel:"child"` is
-  the parent-union; its `rel:"partner"` profiles are the parents. Dedups by numeric
-  profile id; each ancestor fetched once as its own focus (only `focus` has full detail).
-  Builds `GedcomData`; captures lat/long, generation, and union guids. Histogram prints
-  both **distinct** and **ahnentafel positions** per generation.
-- `GeniFetch` — CLI (fetch + build): `<start-guid> <max-gens> <out.ged> [cache-dir]`; needs token.
-- `BuildGedcom` / `AncestorMap` — OFFLINE cache-only CLIs (no token), args
-  `<start-guid> <max-gens> <out> [cache-dir]`; safe to run while a GeniFetch is going.
+- `GeniAncestorFetcher` — BFS **upward** (`fetch`/`ascend`): the union where the focus has
+  `rel:"child"` is the parent-union; its `rel:"partner"` profiles are the parents. Dedups
+  by numeric profile id; each ancestor fetched once as its own focus (only `focus` has
+  full detail). Builds `GedcomData`; captures lat/long, generation, and union guids.
+  Histogram prints both **distinct** and **ahnentafel positions** per generation
+  (positions is anchored on `startNumericId`, not "whoever has generation 0" — needed once
+  descendants can also land on generation 0).
+  - `fetchWithDescendants(startId, upGenerations)` — ascends as above, then **descends**
+    from every "boundary" profile (one whose own parents weren't fetched: `childUnionId`
+    null, no partners recorded, or the generation cap was hit) through ALL of their
+    descendants via `profileUnions` (a profile-id → their-own-marriage-unions reverse
+    index) and `unionChildren`. Since a nearer ancestor's descendants are always a subset
+    of a boundary ancestor's, descending from just the boundary set recovers cousins,
+    aunts/uncles, nieces/nephews, etc. at every remove in one pass. In-laws are fetched
+    for their name/details but never traversed past. Already-`visited` nodes (direct
+    ancestors found during ascend, e.g. the start person's own parents) are still expanded
+    during descend — using their authoritative ascend-assigned generation, not the value
+    computed along the descent path — otherwise full siblings and the start person's own
+    descendants would be silently missed.
+- `GeniFetch` / `GeniCousinFetch` — CLI (fetch + build), online, need token:
+  `<start-guid> <max-gens|up-gens> <out.ged> [cache-dir]`.
+- `BuildGedcom` / `BuildCousinGedcom` / `AncestorMap` — OFFLINE cache-only CLIs (no token),
+  same args shape; safe to run while a `GeniFetch`/`GeniCousinFetch` is going.
 - `AncestorMapWriter` — Leaflet/OSM map, teardrop pins coloured by generation (rainbow
   capped at gen 40, deeper = violet), compact legend, title. (Won't render as a Claude
   Artifact — CSP blocks external tiles/CDN; open the HTML locally.)
@@ -63,6 +78,11 @@ Main analyzer:
   ~12s/call, no 429s). A deep run is slow but resumable — rerun the same command with a
   fresh token; the cache skips finished profiles. Higher limits require app approval via
   email to `api@geni.com` (answer their read-only/personal-use questionnaire).
+- **VS Code + `.vscode/launch.json` gotcha:** the `GeniFetch` configs read the token via
+  `"env": {"GENI_ACCESS_TOKEN": "${env:GENI_ACCESS_TOKEN}"}`, which only sees a var that
+  was exported **before VS Code itself started**. `export`ing in an integrated terminal
+  after VS Code is already open won't work — quit VS Code fully and relaunch it (e.g.
+  `code .`) from a shell where the token is already exported.
 
 ## Key design decisions & gotchas
 
@@ -99,23 +119,38 @@ Main analyzer:
 
 ## Local, machine-specific setup (NOT in the repo — recreate per machine)
 
-These are git-ignored and won't come from a clone:
-- `.vscode/launch.json` — per-person run configs (has family names/IDs; kept local).
-- `gedcoms` — a symlink to the folder of GEDCOM files, so configs can use short paths:
-  `ln -sfn "<path to GEDCOM folder>" gedcoms`. That folder is organised into subdirs
-  `Gedcom files/`, `Ancestor Maps/`, `Family Analyzer Reports/`.
-- `geni-cache*/` — API response caches (large).
-- `*.ged` / `*.html` — data and output (except `test-family.ged`).
+These are git-ignored and won't come from a clone. The project's code lives in a plain
+local git clone per machine (synced via GitHub push/pull); the actual data — GEDCOM
+files, the Geni cache, and generated reports — lives once on Google Drive and each
+clone just symlinks to it, so both machines share the same data without putting any of
+it in git:
+- `.vscode/launch.json` — per-person run configs (has family names/IDs; kept local, one
+  copy per machine — not synced via Drive or git).
+- `gedcoms` — a symlink to the **parent** folder containing the GEDCOM files (not the
+  `Gedcom files/` subfolder itself — `launch.json`'s args are `gedcoms/Gedcom files/…`,
+  `gedcoms/Ancestor Maps/…`, `gedcoms/Family Analyzer Reports/…`):
+  `ln -sfn "<path to the folder containing Gedcom files/>" gedcoms`.
+- `geni-cache` — a symlink to the shared Geni API response cache on Drive:
+  `ln -sfn "<path to geni-cache on Drive>" geni-cache`. (A real *local* `geni-cache*/`
+  dir, e.g. for a scratch/offline test, is also gitignored if you ever want one instead.)
+- `output` — a symlink to the shared generated-reports folder on Drive:
+  `ln -sfn "<path to output on Drive>" output`.
+- `*.ged` / `*.html` — data and output wherever they land directly in the repo root
+  (except `test-family.ged`).
 
 ## Open / possible next steps
 
-- **Cousin/descendant fetcher (planned next major feature).** Geni's GEDCOM export is
-  capped (~1,800 profiles), which truncates distant cousins — a "missing" 3rd/4th cousin
-  is simply not in the exported files. Plan: a fetcher that goes UP to the Nth-great-
-  grandparents (default 4th = gen 6, → up to 5th cousins) and then DOWN through ALL their
-  descendants. Reuses `immediate-family` (a person's partner-unions give their children)
-  plus the existing cache/offline/GEDCOM code. Make the "up" depth a parameter (cousin
-  degree vs. fetch time). NOTE: descendant runs can be many thousands of profiles — much
+- **Cousin/descendant fetcher — built, not yet run for real.** `GeniAncestorFetcher.
+  fetchWithDescendants` + the `GeniCousinFetch` / `BuildCousinGedcom` CLIs (see
+  Architecture above) exist and are validated (a hand-built synthetic cache fixture
+  round-tripped correctly end-to-end through `GedcomFamilyAnalyzer`'s cousin report; a
+  real-cache offline smoke test against the existing 1,248-profile cache also ran clean,
+  though that cache predates this feature so it had no aunt/uncle/cousin data to surface
+  offline). **What's actually left is a live run**: `GeniCousinFetch <start-id>
+  <up-generations> <out.ged>` with a fresh `GENI_ACCESS_TOKEN`, to pull the previously-
+  unfetched descendant profiles into the cache. Once that GEDCOM exists,
+  `GedcomFamilyAnalyzer` already prints the resulting cousin lists — no further code
+  changes needed there. NOTE: descendant runs can be many thousands of profiles — much
   bigger than an ancestor run — so a higher rate limit really matters here.
 - Optional: request a higher Geni rate limit (email `api@geni.com`).
 - Optional: Google Geocoding fallback for places Geni left WITHOUT any coordinates
