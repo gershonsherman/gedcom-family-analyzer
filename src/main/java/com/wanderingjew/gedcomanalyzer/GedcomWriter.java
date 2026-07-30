@@ -72,6 +72,9 @@ public class GedcomWriter {
                 person.getBirthLatitude(), person.getBirthLongitude());
         writeEvent(out, "DEAT", person.getDeathDate(), person.getDeathPlace(),
                 person.getDeathLatitude(), person.getDeathLongitude());
+        // Current residence (living people): no date, just a place.
+        writeEvent(out, "_CURRENT", null, person.getCurrentPlace(),
+                person.getCurrentLatitude(), person.getCurrentLongitude());
 
         for (String famId : person.getFamilyIdsAsChild()) {
             out.println("1 FAMC @F" + famId + "@");

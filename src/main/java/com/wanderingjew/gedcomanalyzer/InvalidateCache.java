@@ -16,37 +16,50 @@ import java.util.Set;
  * GeniFetch re-fetches their updated data from Geni. Matches on each file's
  * focus guid, so it removes exactly the file where that person is the subject.
  *
- * Usage: InvalidateCache <guid> [<guid> ...]
+ * Usage: InvalidateCache <guid> [<guid> ...] [--cache-dir <dir>]
  *   guid may be given as 6000000..., I6000000..., or @I6000000...@.
+ *   cache-dir defaults to GeniClient.cacheDirFromEnv() (./geni-cache, or GENI_CACHE_DIR).
+ *
+ * Matches any cache-version filename (*.v*.json), not just the current
+ * CACHE_VERSION, so it also cleans up orphaned files left behind by a past
+ * version bump.
  */
 public class InvalidateCache {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
-            System.out.println("Usage: InvalidateCache <guid> [<guid> ...]");
+            System.out.println("Usage: InvalidateCache <guid> [<guid> ...] [--cache-dir <dir>]");
             System.out.println("  Deletes the cache file(s) for the given Geni guid(s) so they are refetched.");
             System.out.println("  guid may be 6000000..., I6000000..., or @I6000000...@.");
+            System.out.println("  --cache-dir: optional cache directory (default ./geni-cache, or GENI_CACHE_DIR).");
             System.exit(1);
         }
 
-        Path cacheDir = Paths.get("geni-cache");
+        Path cacheDir = GeniClient.cacheDirFromEnv();
+        Set<String> targets = new HashSet<>();
+        for (int i = 0; i < args.length; i++) {
+            if ("--cache-dir".equals(args[i]) && i + 1 < args.length) {
+                cacheDir = Paths.get(args[++i]);
+                continue;
+            }
+            targets.add(normalizeGuid(args[i]));
+        }
+
         if (!Files.isDirectory(cacheDir)) {
-            System.out.println("No geni-cache directory here — nothing to invalidate.");
+            System.out.println("No cache directory at " + cacheDir.toAbsolutePath() + " — nothing to invalidate.");
             return;
         }
-
-        Set<String> targets = new HashSet<>();
-        for (String a : args) {
-            targets.add(normalizeGuid(a));
-        }
+        System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
 
         ObjectMapper mapper = new ObjectMapper();
+        // Track which target guids were actually matched, rather than removing from
+        // targets on first match — a guid can have more than one matching file (e.g. an
+        // orphaned file from a past CACHE_VERSION bump alongside the current one), and
+        // all of them need deleting, not just the first one found.
+        Set<String> found = new HashSet<>();
         int deleted = 0;
-        try (DirectoryStream<Path> files = Files.newDirectoryStream(cacheDir, "*.v2.json")) {
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(cacheDir, "*.v*.json")) {
             for (Path file : files) {
-                if (targets.isEmpty()) {
-                    break;
-                }
                 String guid;
                 try {
                     JsonNode focus = mapper.readTree(file.toFile()).get("focus");
@@ -54,17 +67,20 @@ public class InvalidateCache {
                 } catch (IOException e) {
                     continue; // skip unreadable / partially-written files
                 }
-                if (guid != null && targets.remove(guid)) {
+                if (guid != null && targets.contains(guid)) {
                     Files.delete(file);
                     System.out.println("Deleted " + file.getFileName() + " (guid " + guid + ")");
+                    found.add(guid);
                     deleted++;
                 }
             }
         }
 
-        for (String missing : targets) {
-            System.out.println("No cache file found for guid " + missing
-                    + " (not fetched yet, or already removed).");
+        for (String target : targets) {
+            if (!found.contains(target)) {
+                System.out.println("No cache file found for guid " + target
+                        + " (not fetched yet, or already removed).");
+            }
         }
         System.out.println("Deleted " + deleted + " cache file(s). Re-run GeniFetch with a valid token to refetch.");
     }

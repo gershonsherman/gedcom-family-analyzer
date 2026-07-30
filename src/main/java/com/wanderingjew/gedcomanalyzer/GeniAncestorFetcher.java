@@ -414,6 +414,18 @@ public class GeniAncestorFetcher {
                 d.deathLng = doubleOrNull(loc, "longitude");
             }
         }
+        JsonNode currentResidence = focus.get("current_residence");
+        if (currentResidence != null) {
+            // Unlike birth/death, current_residence isn't a dated event; its exact shape
+            // isn't confirmed against Geni's docs, so accept either a nested "location"
+            // object (matching birth/death) or the fields directly on current_residence.
+            JsonNode loc = currentResidence.has("location") ? currentResidence.get("location") : currentResidence;
+            d.currentPlace = buildPlace(loc);
+            if (loc != null) {
+                d.currentLat = doubleOrNull(loc, "latitude");
+                d.currentLng = doubleOrNull(loc, "longitude");
+            }
+        }
         return d;
     }
 
@@ -578,6 +590,16 @@ public class GeniAncestorFetcher {
             p.setDeathLatitude(d.deathLat);
             p.setDeathLongitude(d.deathLng);
         }
+
+        p.setCurrentPlace(d.currentPlace);
+        double[] currentOverride = PlaceOverrides.get().lookup(d.currentPlace);
+        if (currentOverride != null) {
+            p.setCurrentLatitude(currentOverride[0]);
+            p.setCurrentLongitude(currentOverride[1]);
+        } else {
+            p.setCurrentLatitude(d.currentLat);
+            p.setCurrentLongitude(d.currentLng);
+        }
         return p;
     }
 
@@ -719,6 +741,9 @@ public class GeniAncestorFetcher {
         String deathPlace;
         Double deathLat;
         Double deathLng;
+        String currentPlace;
+        Double currentLat;
+        Double currentLng;
         String childUnionId;
         int generation;
     }
@@ -731,32 +756,57 @@ public class GeniAncestorFetcher {
         public final int generation;
         public final double lat;
         public final double lng;
-        public final boolean death;
+        /** "current", "death", or "birth" — which of the person's locations this point uses. */
+        public final String locationType;
 
         MapPoint(String name, String lifeDates, String place, int generation,
-                 double lat, double lng, boolean death) {
+                 double lat, double lng, String locationType) {
             this.name = name;
             this.lifeDates = lifeDates;
             this.place = place;
             this.generation = generation;
             this.lat = lat;
             this.lng = lng;
-            this.death = death;
+            this.locationType = locationType;
         }
 
         /**
          * Build a map point for a person at the given generation, using their death
          * location (or birth location if no death coordinates). Returns null if the
-         * person has no usable coordinates.
+         * person has no usable coordinates. Used for ancestors, who are overwhelmingly
+         * deceased — current residence is not considered here.
          */
         public static MapPoint fromPerson(Person p, int generation) {
             if (p.getDeathLatitude() != null && p.getDeathLongitude() != null) {
                 return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getDeathPlace(),
-                        generation, p.getDeathLatitude(), p.getDeathLongitude(), true);
+                        generation, p.getDeathLatitude(), p.getDeathLongitude(), "death");
             }
             if (p.getBirthLatitude() != null && p.getBirthLongitude() != null) {
                 return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getBirthPlace(),
-                        generation, p.getBirthLatitude(), p.getBirthLongitude(), false);
+                        generation, p.getBirthLatitude(), p.getBirthLongitude(), "birth");
+            }
+            return null;
+        }
+
+        /**
+         * Build a map point preferring current residence, then death, then birth location.
+         * Used for siblings/cousins, most of whom (unlike ancestors) are still alive.
+         * {@code degree} is the relationship degree (0 = sibling, 1..5 = cousin degree),
+         * stored in the {@code generation} field. Returns null if the person has no
+         * usable coordinates.
+         */
+        public static MapPoint fromPersonPreferCurrent(Person p, int degree) {
+            if (p.getCurrentLatitude() != null && p.getCurrentLongitude() != null) {
+                return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getCurrentPlace(),
+                        degree, p.getCurrentLatitude(), p.getCurrentLongitude(), "current");
+            }
+            if (p.getDeathLatitude() != null && p.getDeathLongitude() != null) {
+                return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getDeathPlace(),
+                        degree, p.getDeathLatitude(), p.getDeathLongitude(), "death");
+            }
+            if (p.getBirthLatitude() != null && p.getBirthLongitude() != null) {
+                return new MapPoint(p.getDisplayName(), p.getLifeDates(), p.getBirthPlace(),
+                        degree, p.getBirthLatitude(), p.getBirthLongitude(), "birth");
             }
             return null;
         }

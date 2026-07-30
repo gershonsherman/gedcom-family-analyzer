@@ -209,7 +209,23 @@ public class GedcomFamilyAnalyzer {
             writer.println("        <h2>SIBLINGS</h2>");
             writeSiblingsHtml(analyzer, targetPerson, writer);
             writer.println("    </div>");
-            
+
+            // Cousin map (siblings + 1st-5th cousins, coloured by degree; only rendered
+            // when the data carries coordinates). Also written as a standalone file.
+            List<GeniAncestorFetcher.MapPoint> cousinPoints = buildCousinMapPoints(analyzer, targetPerson);
+            if (!cousinPoints.isEmpty()) {
+                writer.println("    <div class=\"section\">");
+                writer.println("        <h2>COUSIN MAP</h2>");
+                writer.print(new CousinMapWriter().mapSection(cousinPoints, "cousin-map", "500px"));
+                writer.println("    </div>");
+
+                String cousinMapPath = cousinMapOutputPath(htmlOutputFile);
+                ensureOutputDirectoryExists(cousinMapPath);
+                new CousinMapWriter().write(cousinPoints, cousinMapPath,
+                        targetPerson.getDisplayName() + " Cousin Map");
+                System.out.println("Cousin map written to: " + cousinMapPath);
+            }
+
             // Cousins
             writer.println("    <div class=\"section\">");
             writer.println("        <h2>COUSINS</h2>");
@@ -250,6 +266,52 @@ public class GedcomFamilyAnalyzer {
             }
         }
         return new AncestorMapWriter().mapSection(points, "ancestor-map", "500px");
+    }
+
+    /**
+     * Build map points for siblings and 1st-5th cousins, coloured by relationship
+     * degree (0 = sibling ... 5 = 5th cousin — see {@link CousinMapWriter}). Each
+     * person appears at most once, at their nearest degree; {@code getCousinsGroupedByFamily}
+     * already excludes closer relatives from each degree's results, so no further
+     * cross-degree dedup is needed beyond guarding duplicate entries within one degree.
+     */
+    private List<GeniAncestorFetcher.MapPoint> buildCousinMapPoints(FamilyRelationshipAnalyzer analyzer, Person targetPerson) {
+        List<GeniAncestorFetcher.MapPoint> points = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
+        for (Person sibling : analyzer.getSiblings(targetPerson)) {
+            if (!seen.add(sibling.getId())) {
+                continue;
+            }
+            GeniAncestorFetcher.MapPoint point = GeniAncestorFetcher.MapPoint.fromPersonPreferCurrent(sibling, 0);
+            if (point != null) {
+                points.add(point);
+            }
+        }
+
+        for (int degree = 1; degree <= 5; degree++) {
+            Map<String, List<Person>> groupedCousins = analyzer.getCousinsGroupedByFamily(targetPerson, degree);
+            for (List<Person> cousins : groupedCousins.values()) {
+                for (Person cousin : cousins) {
+                    if (!seen.add(cousin.getId())) {
+                        continue;
+                    }
+                    GeniAncestorFetcher.MapPoint point = GeniAncestorFetcher.MapPoint.fromPersonPreferCurrent(cousin, degree);
+                    if (point != null) {
+                        points.add(point);
+                    }
+                }
+            }
+        }
+        return points;
+    }
+
+    /** Derive the standalone cousin-map path from the main HTML output path (e.g. "x.html" -> "x-cousins-map.html"). */
+    private String cousinMapOutputPath(String htmlOutputFile) {
+        if (htmlOutputFile.toLowerCase().endsWith(".html")) {
+            return htmlOutputFile.substring(0, htmlOutputFile.length() - 5) + "-cousins-map.html";
+        }
+        return htmlOutputFile + "-cousins-map.html";
     }
 
     private void writeAncestorsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {

@@ -27,9 +27,11 @@ public class GeniClient {
     // Profile fields to request explicitly — the default immediate-family response
     // omits maiden_name and death. Bump CACHE_VERSION whenever this changes so stale
     // cached responses are refetched instead of reused.
+    // current_residence: a living person's current location — used for the cousin map,
+    // which prefers it over death/birth location since most cousins are still alive.
     private static final String PROFILE_FIELDS =
-            "id,guid,name,first_name,last_name,maiden_name,gender,is_alive,birth,death";
-    private static final String CACHE_VERSION = "v2";
+            "id,guid,name,first_name,last_name,maiden_name,gender,is_alive,birth,death,current_residence";
+    private static final String CACHE_VERSION = "v3";
 
     private final HttpClient http = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)

@@ -11,24 +11,24 @@ import java.nio.file.Paths;
 import java.util.List;
 
 /**
- * Renders ancestor map points as a Leaflet/OpenStreetMap view — either a full
- * standalone HTML page or an embeddable section (for the analyzer report).
- * Markers are teardrop pins coloured by generation across a red-to-violet rainbow.
+ * Renders sibling/cousin map points as a Leaflet/OpenStreetMap view — either a full
+ * standalone HTML page or an embeddable section (for the analyzer report). Markers
+ * are teardrop pins coloured by relationship degree across a fixed six-colour scale
+ * (red = sibling, orange = 1st cousin, ... purple = 5th cousin), unlike
+ * {@link AncestorMapWriter}'s continuous per-generation rainbow.
+ *
+ * <p>Reuses {@link GeniAncestorFetcher.MapPoint} for points: its {@code generation}
+ * field is repurposed here to mean relationship degree (0 = sibling, 1..5 = cousin
+ * degree).
  */
-public class AncestorMapWriter {
+public class CousinMapWriter {
 
     private final ObjectMapper mapper = new ObjectMapper();
-
-    /** Lines to place in the &lt;head&gt; of any page that embeds a map section. */
-    public static String leafletHead() {
-        return "    <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"/>\n"
-             + "    <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script>";
-    }
 
     /** Write a full standalone map page with the given title. */
     public void write(List<GeniAncestorFetcher.MapPoint> points, String outputPath, String title)
             throws IOException {
-        String pageTitle = (title == null || title.trim().isEmpty()) ? "Ancestor Map" : title.trim();
+        String pageTitle = (title == null || title.trim().isEmpty()) ? "Cousin Map" : title.trim();
         try (Writer w = Files.newBufferedWriter(Paths.get(outputPath), StandardCharsets.UTF_8);
              PrintWriter out = new PrintWriter(w)) {
             out.println("<!DOCTYPE html>");
@@ -37,10 +37,10 @@ public class AncestorMapWriter {
             out.println("  <meta charset=\"UTF-8\">");
             out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
             out.println("  <title>" + escapeHtml(pageTitle) + "</title>");
-            out.println(leafletHead());
+            out.println(AncestorMapWriter.leafletHead());
             out.println("  <style>");
             out.println("    html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; }");
-            out.println("    #ancestor-map { height: 100%; }");
+            out.println("    #cousin-map { height: 100%; }");
             out.println("    .map-title { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);");
             out.println("                 z-index: 1000; background: rgba(255,255,255,0.92); padding: 6px 16px;");
             out.println("                 border-radius: 6px; box-shadow: 0 1px 5px rgba(0,0,0,0.3);");
@@ -50,7 +50,7 @@ public class AncestorMapWriter {
             out.println("</head>");
             out.println("<body>");
             out.println("  <div class=\"map-title\">" + escapeHtml(pageTitle) + "</div>");
-            out.print(mapSection(points, "ancestor-map", "100%"));
+            out.print(mapSection(points, "cousin-map", "100%"));
             out.println("</body>");
             out.println("</html>");
         }
@@ -63,8 +63,8 @@ public class AncestorMapWriter {
     /**
      * Return an embeddable HTML fragment (a sized div plus a self-contained script)
      * that renders the map into an element with the given id. The caller must include
-     * {@link #leafletHead()} in the page head. Returns an empty string if there are
-     * no points, so callers can simply skip an empty map.
+     * {@link AncestorMapWriter#leafletHead()} in the page head. Returns an empty string
+     * if there are no points, so callers can simply skip an empty map.
      */
     public String mapSection(List<GeniAncestorFetcher.MapPoint> points, String divId, String heightCss)
             throws IOException {
@@ -99,13 +99,16 @@ public class AncestorMapWriter {
     // Map-building logic, parameterised by the container id (uses local vars inside an IIFE).
     private static String script(String divId) {
         return String.join("\n",
-            // Spread the rainbow over the first CAP generations; everything deeper is violet.",
-            "const CAP = 40;",
-            "function color(g) { const c = Math.min(g, CAP); return `hsl(${(c / CAP) * 270}, 85%, 50%)`; }",
+            // Fixed discrete palette, index 0 = sibling, 1..5 = cousin degree.
+            "const COLORS = ['hsl(0,85%,50%)', 'hsl(30,85%,50%)', 'hsl(50,85%,50%)',",
+            "                 'hsl(130,80%,38%)', 'hsl(215,85%,50%)', 'hsl(280,70%,50%)'];",
+            "const LABELS = ['Sibling', '1st cousin', '2nd cousin', '3rd cousin', '4th cousin', '5th cousin'];",
+            "function color(d) { return COLORS[Math.max(0, Math.min(d, COLORS.length - 1))]; }",
+            "function label(d) { return LABELS[Math.max(0, Math.min(d, LABELS.length - 1))]; }",
             "function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>\"']/g,",
             "  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c])); }",
-            "function pinIcon(g) {",
-            "  const c = color(g);",
+            "function pinIcon(d) {",
+            "  const c = color(d);",
             "  const svg = '<svg width=\"24\" height=\"36\" viewBox=\"0 0 24 36\" xmlns=\"http://www.w3.org/2000/svg\">' +",
             "    '<path d=\"M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z\" fill=\"' + c +",
             "    '\" stroke=\"#333\" stroke-width=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"4.5\" fill=\"rgba(255,255,255,0.85)\"/></svg>';",
@@ -123,20 +126,20 @@ public class AncestorMapWriter {
             "  const n = seen[key] || 0; seen[key] = n + 1;",
             "  if (n > 0) { const a = n * 2.399, r = 0.004 * Math.sqrt(n); lat += r * Math.cos(a); lng += r * Math.sin(a); }",
             "  const marker = L.marker([lat, lng], { icon: pinIcon(p.generation) }).addTo(map);",
-            "  const label = p.locationType === 'death' ? 'died' : 'born';",
+            "  const LOCATION_VERBS = { current: 'lives', death: 'died', birth: 'born' };",
+            "  const verb = LOCATION_VERBS[p.locationType] || 'born';",
             "  marker.bindPopup('<b>' + esc(p.name) + '</b><br>' + esc(p.lifeDates) +",
-            "    '<br>' + label + ' at ' + esc(p.place) + '<br><i>generation ' + p.generation + '</i>');",
+            "    '<br>' + verb + ' at ' + esc(p.place) + '<br><i>' + label(p.generation) + '</i>');",
             "  bounds.push([lat, lng]);",
             "});",
             "if (bounds.length) { map.fitBounds(bounds, { padding: [30, 30] }); } else { map.setView([30, 10], 2); }",
             "const legend = L.control({ position: 'bottomright' });",
             "legend.onAdd = function () {",
             "  const div = L.DomUtil.create('div', 'legend');",
-            "  div.innerHTML = '<b>Generation</b><br>';",
-            "  [0, 5, 10, 15, 20, 25, 30, 35, 40].forEach(g => {",
-            "    const label = g === 0 ? 'you' : (g >= CAP ? CAP + '+' : g);",
+            "  div.innerHTML = '<b>Relationship</b><br>';",
+            "  LABELS.forEach((l, i) => {",
             "    div.innerHTML += '<div class=\"row\"><span class=\"swatch\" style=\"background:' +",
-            "      color(g) + '\"></span>' + label + '</div>';",
+            "      color(i) + '\"></span>' + l + '</div>';",
             "  });",
             "  return div;",
             "};",

@@ -262,6 +262,12 @@ public class GedcomParser {
                             break;
                     }
                     break;
+                case "_CURRENT":
+                    // Current residence (living people only) has no DATE, just a place.
+                    if ("PLAC".equals(tag)) {
+                        person.setCurrentPlace(value);
+                    }
+                    break;
             }
         } else if (families.containsKey(id)) {
             Family family = families.get(id);
@@ -322,8 +328,8 @@ public class GedcomParser {
     }
 
     /**
-     * Process level 4 tags — currently birth/death coordinates recorded as
-     * BIRT/DEAT &gt; PLAC &gt; MAP &gt; LATI/LONG.
+     * Process level 4 tags — currently birth/death/current-residence coordinates
+     * recorded as BIRT/DEAT/_CURRENT &gt; PLAC &gt; MAP &gt; LATI/LONG.
      */
     private void processLevel4Tag(String id, String parentTag, String level2Tag, String level3Tag,
                                   String tag, String value) {
@@ -333,7 +339,7 @@ public class GedcomParser {
         if (!"PLAC".equals(level2Tag) || !"MAP".equals(level3Tag)) {
             return;
         }
-        if (!"BIRT".equals(parentTag) && !"DEAT".equals(parentTag)) {
+        if (!"BIRT".equals(parentTag) && !"DEAT".equals(parentTag) && !"_CURRENT".equals(parentTag)) {
             return;
         }
         Double coord = parseCoordinate(value);
@@ -344,14 +350,18 @@ public class GedcomParser {
         if ("LATI".equals(tag)) {
             if ("BIRT".equals(parentTag)) {
                 person.setBirthLatitude(coord);
-            } else {
+            } else if ("DEAT".equals(parentTag)) {
                 person.setDeathLatitude(coord);
+            } else {
+                person.setCurrentLatitude(coord);
             }
         } else if ("LONG".equals(tag)) {
             if ("BIRT".equals(parentTag)) {
                 person.setBirthLongitude(coord);
-            } else {
+            } else if ("DEAT".equals(parentTag)) {
                 person.setDeathLongitude(coord);
+            } else {
+                person.setCurrentLongitude(coord);
             }
         }
     }
