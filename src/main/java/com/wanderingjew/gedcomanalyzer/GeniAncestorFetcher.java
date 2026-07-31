@@ -53,6 +53,8 @@ public class GeniAncestorFetcher {
     // The numeric id of the original start person (generation 0 during ascend), used to
     // anchor the ancestor-positions walk even after descend() adds other generation-0 people.
     private String startNumericId;
+    // Count of profiles skipped due to a 403 (privacy-restricted) response.
+    private int accessDeniedCount = 0;
 
     private final GedcomWriter writer = new GedcomWriter();
     private String checkpointPath;
@@ -81,8 +83,7 @@ public class GeniAncestorFetcher {
      */
     public GedcomData fetch(String startId, int maxGenerations) throws IOException, InterruptedException {
         ascend(startId, maxGenerations);
-        System.out.println("Fetched " + profiles.size() + " profiles total ("
-                + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits).");
+        printFetchSummary();
         printGenerationHistogram();
         return buildGedcomData();
     }
@@ -101,10 +102,15 @@ public class GeniAncestorFetcher {
                 + (boundary.size() == 1 ? " boundary line" : " boundary lines")
                 + "; descending to find their descendants...");
         descend(boundary);
-        System.out.println("Fetched " + profiles.size() + " profiles total ("
-                + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits).");
+        printFetchSummary();
         printGenerationHistogram();
         return buildGedcomData();
+    }
+
+    private void printFetchSummary() {
+        System.out.println("Fetched " + profiles.size() + " profiles total ("
+                + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits"
+                + (accessDeniedCount > 0 ? ", " + accessDeniedCount + " access-denied (skipped)" : "") + ").");
     }
 
     /**
@@ -124,7 +130,7 @@ public class GeniAncestorFetcher {
         try {
             while (!queue.isEmpty()) {
                 QueueEntry entry = queue.poll();
-                String numericId = fetchProfile(entry.id, entry.generation);
+                String numericId = fetchProfile(entry.id, entry.generation, null);
                 if (numericId == null) {
                     continue;
                 }
@@ -191,7 +197,7 @@ public class GeniAncestorFetcher {
                     // rather than the value computed along this particular descent path.
                     generation = profiles.get(numericId).generation;
                 } else {
-                    numericId = fetchProfile(entry.id, entry.generation);
+                    numericId = fetchProfile(entry.id, entry.generation, entry.knownChildUnionId);
                     if (numericId == null) {
                         continue;
                     }
@@ -203,12 +209,12 @@ public class GeniAncestorFetcher {
                         if (!partnerId.equals(numericId) && !visited.contains(partnerId)) {
                             // Fetch the in-law fully (for their name/details) but don't
                             // enqueue them — they're not a blood descendant of the boundary.
-                            fetchProfile(partnerId, generation);
+                            fetchProfile(partnerId, generation, null);
                         }
                     }
                     for (String childId : unionChildren.getOrDefault(unionId, Collections.emptySet())) {
                         if (!queued.contains(childId)) {
-                            queue.add(new QueueEntry(childId, generation - 1));
+                            queue.add(new QueueEntry(childId, generation - 1, unionId));
                             queued.add(childId);
                         }
                     }
@@ -226,9 +232,23 @@ public class GeniAncestorFetcher {
      * generation and accumulating any union edges found in the response. Returns the
      * profile's resolved numeric id, or null if it's unavailable (offline cache miss)
      * or was already fetched via another path.
+     *
+     * @param knownChildUnionId the union this person is already known to be a child of
+     *                          (from descend()'s traversal), used only as a fallback if
+     *                          the profile turns out to be access-denied; pass null when
+     *                          not applicable (ascend, or in-law lookups during descend).
      */
-    private String fetchProfile(String id, int generation) throws IOException, InterruptedException {
-        JsonNode root = client.immediateFamily(id);
+    private String fetchProfile(String id, int generation, String knownChildUnionId) throws IOException, InterruptedException {
+        JsonNode root;
+        try {
+            root = client.immediateFamily(id);
+        } catch (GeniAccessDeniedException e) {
+            // A privacy-restricted profile — expected to happen repeatedly on a deep
+            // descendant fetch reaching many living relatives. Record a "Private"
+            // placeholder (matching how Geni's own site shows it) rather than silently
+            // omitting them, and keep going rather than aborting the whole run.
+            return recordPrivateProfile(id, generation, knownChildUnionId);
+        }
         if (root == null) {
             // Offline mode and this profile isn't cached yet — skip it (partial result).
             return null;
@@ -269,6 +289,36 @@ public class GeniAncestorFetcher {
             writeCheckpoint();
         }
         return numericId;
+    }
+
+    /**
+     * Record a placeholder for a profile Geni denied access to, so the tree still shows
+     * that someone exists there (matching Geni's own "Private" display) instead of
+     * silently having a gap. We don't know their name or other details, and — since we
+     * couldn't fetch their own focus — not their parents either; {@code knownChildUnionId}
+     * (the union we already know they're a child of, from descend()'s own traversal) is
+     * used as a fallback so they still appear correctly placed as that union's child. When
+     * discovered during ascend instead (as a denied parent), no such fallback is needed:
+     * buildGedcomData() already links a person into a union generically via
+     * {@code unionPartners}, independent of whether that person has their own childUnionId.
+     */
+    private String recordPrivateProfile(String id, int generation, String knownChildUnionId) {
+        if (visited.contains(id)) {
+            return null;
+        }
+        visited.add(id);
+        accessDeniedCount++;
+        System.out.println("  Profile " + id + " is private (access denied) — recording as \"Private\".");
+
+        ProfileData data = new ProfileData();
+        data.guid = "private-" + id;
+        data.name = "Private";
+        data.generation = generation;
+        data.childUnionId = knownChildUnionId;
+        synchronized (this) {
+            profiles.put(id, data);
+        }
+        return id;
     }
 
     /**
@@ -523,7 +573,12 @@ public class GeniAncestorFetcher {
             }
 
             // Assign parents (only those we actually fetched, so they have full detail).
-            for (String parentNumeric : unionPartners.getOrDefault(unionId, new LinkedHashSet<>())) {
+            // Two passes: known-gender partners take their correct slot first, so an
+            // unknown-gender partner (e.g. a "Private" placeholder from a denied
+            // profile — see recordPrivateProfile) can never overwrite them; it just
+            // fills whichever slot is still open afterward instead.
+            Set<String> unionParentIds = unionPartners.getOrDefault(unionId, new LinkedHashSet<>());
+            for (String parentNumeric : unionParentIds) {
                 String parentGuid = numericToGuid.get(parentNumeric);
                 if (parentGuid == null) {
                     continue;
@@ -531,8 +586,26 @@ public class GeniAncestorFetcher {
                 ProfileData parent = profiles.get(parentNumeric);
                 if ("female".equalsIgnoreCase(parent.gender)) {
                     family.setWifeId(parentGuid);
-                } else {
+                } else if ("male".equalsIgnoreCase(parent.gender)) {
                     family.setHusbandId(parentGuid);
+                }
+            }
+            for (String parentNumeric : unionParentIds) {
+                String parentGuid = numericToGuid.get(parentNumeric);
+                if (parentGuid == null) {
+                    continue;
+                }
+                ProfileData parent = profiles.get(parentNumeric);
+                boolean knownGender = "female".equalsIgnoreCase(parent.gender) || "male".equalsIgnoreCase(parent.gender);
+                if (!knownGender) {
+                    if (family.getHusbandId() == null) {
+                        family.setHusbandId(parentGuid);
+                    } else if (family.getWifeId() == null) {
+                        family.setWifeId(parentGuid);
+                    }
+                    // else: both slots already filled (e.g. 3+ partners with unknown
+                    // gender) — still recorded as a Person and linked below, just not
+                    // as this family's HUSB/WIFE (GEDCOM has one slot each).
                 }
                 Person parentPerson = persons.get(parentGuid);
                 if (parentPerson != null && !parentPerson.getFamilyIdsAsSpouse().contains(familyId)) {
@@ -815,10 +888,20 @@ public class GeniAncestorFetcher {
     private static class QueueEntry {
         final String id;
         final int generation;
+        // The union this person is already known to be a child of, if discovered via
+        // descend()'s unionChildren traversal — used as a fallback childUnionId if their
+        // own profile turns out to be access-denied, since then we can't find it out any
+        // other way. Null for ascend entries (not needed there — see fetchProfile).
+        final String knownChildUnionId;
 
         QueueEntry(String id, int generation) {
+            this(id, generation, null);
+        }
+
+        QueueEntry(String id, int generation, String knownChildUnionId) {
             this.id = id;
             this.generation = generation;
+            this.knownChildUnionId = knownChildUnionId;
         }
     }
 }

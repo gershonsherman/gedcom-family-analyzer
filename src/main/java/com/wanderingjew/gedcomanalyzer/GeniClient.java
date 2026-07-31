@@ -81,14 +81,17 @@ public class GeniClient {
     /**
      * Fetch the immediate family of a profile. {@code profileId} may be a numeric
      * id ("34670250082") or a guid form ("g6000000031619060876").
+     *
+     * @throws GeniAccessDeniedException if Geni returned 403 for this profile (privacy
+     *         restricted) — including on a cache hit, if a prior call already recorded
+     *         that denial, so a resumed or offline run doesn't re-attempt the API call.
      */
     public JsonNode immediateFamily(String profileId) throws IOException, InterruptedException {
         Path cacheFile = cacheDir.resolve(profileId + "." + CACHE_VERSION + ".json");
         if (Files.exists(cacheFile)) {
+            JsonNode node = null;
             try {
-                JsonNode node = mapper.readTree(Files.readAllBytes(cacheFile));
-                cacheHits++;
-                return node;
+                node = mapper.readTree(Files.readAllBytes(cacheFile));
             } catch (IOException e) {
                 // Likely a half-written file from a concurrent fetch. Skip it when offline;
                 // when online, fall through and refetch a clean copy.
@@ -96,16 +99,30 @@ public class GeniClient {
                     return null;
                 }
             }
+            if (node != null) {
+                cacheHits++;
+                if (node.path("_denied").asBoolean(false)) {
+                    throw new GeniAccessDeniedException(
+                            "Profile " + profileId + " is privacy-restricted (cached denial).");
+                }
+                return node;
+            }
         }
 
         if (offline) {
             return null;
         }
 
-        String body = get("profile-" + profileId + "/immediate-family");
-        // Cache the raw JSON so subsequent runs skip the network entirely.
-        Files.write(cacheFile, body.getBytes(StandardCharsets.UTF_8));
-        return mapper.readTree(body);
+        try {
+            String body = get("profile-" + profileId + "/immediate-family");
+            // Cache the raw JSON so subsequent runs skip the network entirely.
+            Files.write(cacheFile, body.getBytes(StandardCharsets.UTF_8));
+            return mapper.readTree(body);
+        } catch (GeniAccessDeniedException e) {
+            // Cache the denial itself so a resumed or offline run doesn't re-attempt it.
+            Files.write(cacheFile, "{\"_denied\":true}".getBytes(StandardCharsets.UTF_8));
+            throw e;
+        }
     }
 
     private String get(String apiPath) throws IOException, InterruptedException {
@@ -133,6 +150,12 @@ public class GeniClient {
             if (status == 401) {
                 throw new IOException("Geni API returned 401 Unauthorized — the access token is missing or expired. "
                         + "Get a fresh token and set GENI_ACCESS_TOKEN, then rerun (cached progress is kept).");
+            }
+            if (status == 403) {
+                // Typically a privacy restriction on this specific profile, not a token
+                // problem — the caller can skip it and keep going.
+                throw new GeniAccessDeniedException("Geni API returned 403 Forbidden for " + apiPath
+                        + " (likely a privacy-restricted profile): " + response.body());
             }
             if ((status == 429 || status == 503) && attempt <= 12) {
                 long waitMs = throttleWaitMillis(response, attempt);
