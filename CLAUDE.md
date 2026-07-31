@@ -25,18 +25,33 @@ Main analyzer:
 
 - `Person` / `Family` / `GedcomData` — model. `Person` carries givenName, surname,
   marriedName, geniName, birth/death date+place+lat/long, and relationship lists.
-- `GedcomParser` — parses GEDCOM incl. custom tags `_MARNM`, `_GENINAME`, and
-  `PLAC>MAP>LATI/LONG` (levels 3/4). Prefers ASCII names over Hebrew/foreign.
+- `GedcomParser` — parses GEDCOM incl. custom tags `_MARNM`, `_GENINAME`, `_CURRENT`
+  (current residence — no date, just a place), and `PLAC>MAP>LATI/LONG` (levels 3/4, under
+  `BIRT`/`DEAT`/`_CURRENT`). Prefers ASCII names over Hebrew/foreign. When merging multiple
+  files for the same person (`parseMultipleFiles`), the **first** file to supply a given
+  birth/death/current-residence date+place+coordinates wins, not the last — otherwise the
+  winner depended on alphabetical filename order (an accident of naming, not a deliberate
+  "prefer this source" choice), and a later file could overwrite just the place text while
+  leaving earlier coordinates in place, mismatching the two.
 - `FamilyRelationshipAnalyzer` — relationship computations.
-- `GedcomFamilyAnalyzer` — CLI/main; writes the HTML report (which embeds an
-  ancestors-only Leaflet map when the GEDCOM has coordinates).
+- `GedcomFamilyAnalyzer` — CLI/main; writes the HTML report, which embeds an ancestor map,
+  a descendant map, and a cousin map (siblings + 1st-5th cousins) when the GEDCOM has
+  coordinates — see `AncestorMapWriter`/`CousinMapWriter` below. The cousin map is also
+  written as a standalone `<report>-cousins-map.html` file alongside the main report.
 - `GedcomWriter` — writes a `GedcomData` back to a single `.ged`.
 
 ### Geni API fetcher subsystem
-- `GeniClient` — calls `profile-<id>/immediate-family`; token from `GENI_ACCESS_TOKEN`;
-  on-disk cache `geni-cache/<id>.v2.json` (git-ignored; bump `CACHE_VERSION` if the
-  requested `fields` change); adaptive pacing off `X-API-Rate-*` headers;
-  `setOffline(true)` = cache-only (returns null on miss). `cacheDirFromEnv()` default.
+- `GeniClient` — calls `profile-<id>/immediate-family` with fields incl. `birth`, `death`,
+  `current_residence` (living people; exact JSON shape unconfirmed against docs — parsed
+  defensively, accepting either a nested `location` object or fields directly on
+  `current_residence`, matching `birth`/`death`'s shape); token from `GENI_ACCESS_TOKEN`;
+  on-disk cache `geni-cache/<id>.v3.json` (git-ignored; bump `CACHE_VERSION` if the
+  requested `fields` change — this invalidates the *entire* cache, forcing a full refetch,
+  so don't bump it casually); adaptive pacing off `X-API-Rate-*` headers; `setOffline(true)`
+  = cache-only (returns null on miss). `cacheDirFromEnv()` default. A 403 (privacy-restricted
+  profile — common on a deep descendant fetch reaching many living relatives) throws
+  `GeniAccessDeniedException` rather than the generic fatal error, and the denial itself is
+  cached (`{"_denied":true}`) so a resumed/offline run doesn't re-attempt the blocked call.
 - `GeniAncestorFetcher` — BFS **upward** (`fetch`/`ascend`): the union where the focus has
   `rel:"child"` is the parent-union; its `rel:"partner"` profiles are the parents. Dedups
   by numeric profile id; each ancestor fetched once as its own focus (only `focus` has
@@ -55,16 +70,38 @@ Main analyzer:
     ancestors found during ascend, e.g. the start person's own parents) are still expanded
     during descend — using their authoritative ascend-assigned generation, not the value
     computed along the descent path — otherwise full siblings and the start person's own
-    descendants would be silently missed.
+    descendants would be silently missed. **Confirmed working on a real live run** (Irit,
+    up to 6 generations) — see Findings below.
+  - A 403-denied profile is recorded as a synthesized `"private-<id>"` person named
+    `"Private"` (matching how Geni's own site shows it) rather than silently omitted, so the
+    tree still shows that someone exists there. A denied *parent* (found ascending) needs no
+    special handling — `buildGedcomData()` links a union's partners generically. A denied
+    *child* (found descending) can't report its own parent union, since we never got its
+    focus response — `QueueEntry` carries the union it was already discovered through, as a
+    fallback `childUnionId`. This surfaced a real bug in `buildGedcomData()`'s husband/wife
+    assignment: unknown gender defaulted to "husband", which could silently overwrite an
+    already-assigned husband and drop them from the family — fixed with a two-pass
+    assignment (known genders first; unknown-gender partners, e.g. `"Private"`, only fill
+    whichever slot is still open).
 - `GeniFetch` / `GeniCousinFetch` — CLI (fetch + build), online, need token:
   `<start-guid> <max-gens|up-gens> <out.ged> [cache-dir]`.
 - `BuildGedcom` / `BuildCousinGedcom` / `AncestorMap` — OFFLINE cache-only CLIs (no token),
   same args shape; safe to run while a `GeniFetch`/`GeniCousinFetch` is going.
-- `AncestorMapWriter` — Leaflet/OSM map, teardrop pins coloured by generation (rainbow
-  capped at gen 40, deeper = violet), compact legend, title. (Won't render as a Claude
-  Artifact — CSP blocks external tiles/CDN; open the HTML locally.)
-- `InvalidateCache <guid> …` — deletes a person's cache file (matches on `focus.guid`,
-  which is correct — grep-by-guid is NOT reliable) so the next fetch re-downloads them.
+- `AncestorMapWriter` — Leaflet/OSM map, teardrop pins coloured by generation (continuous
+  rainbow, capped at a configurable generation — default 40 for the ancestor map, 8 for the
+  descendant map, since descendant trees are realistically much shallower), compact legend,
+  title. Popup shows current/death/birth location depending on `MapPoint.locationType`.
+  Shared by the ancestor map (`MapPoint.fromPerson`: death > birth priority — ancestors are
+  overwhelmingly deceased) and the descendant map (`MapPoint.fromPersonPreferCurrent`:
+  current > death > birth — descendants, especially recent generations, are usually alive).
+  (Won't render as a Claude Artifact — CSP blocks external tiles/CDN; open the HTML locally.)
+- `CousinMapWriter` — same Leaflet approach, but a **fixed 6-colour scale** by relationship
+  degree (red = sibling, orange → purple = 1st → 5th cousin) instead of a continuous
+  generation scale, also using `fromPersonPreferCurrent`.
+- `InvalidateCache <guid> … [--cache-dir <dir>]` — deletes a person's cache file (matches on
+  `focus.guid`, which is correct — grep-by-guid is NOT reliable) so the next fetch
+  re-downloads them. Matches any cache-version filename (`*.v*.json`), so it also cleans up
+  orphaned files left behind by a past `CACHE_VERSION` bump, not just the current version.
 - `PlaceOverrides` + `place-overrides.tsv` — manual coordinate corrections for places Geni
   geocoded wrongly (e.g. "Babylon" → Babylon NY). We do NOT geocode; all coords are Geni's.
 
@@ -114,8 +151,11 @@ Main analyzer:
 - **Geni's GEDCOM export IS scope-limited for COLLATERAL relatives** (~1,800 people per
   export). It reaches ~2nd cousins but drops 3rd/4th. If distant cousins are "missing"
   from a report, they're simply **not in the exported files** — the analyzer can only
-  show people present in the data. The API fetcher only walks **ancestors**, so it does
-  NOT currently recover cousins (that would require fetching descendants of ancestors).
+  show people present in the data. `fetchWithDescendants` (see above) now recovers these
+  by fetching descendants of ancestors — confirmed with a real live run.
+- **A deep descendant fetch hits privacy-restricted (403) profiles often** — expected on
+  any run that reaches many living relatives, not an edge case. See the `GeniClient` /
+  `GeniAncestorFetcher` "Private" handling above.
 
 ## Local, machine-specific setup (NOT in the repo — recreate per machine)
 
@@ -129,8 +169,8 @@ it in git:
 - `.vscode/settings.json` — excludes `gedcoms`/`geni-cache`/`output` from VS Code's file
   watcher and search indexer. **Recreate this on every machine** — without it, VS Code
   recursively walks those Drive symlinks on startup and can take a very long time to
-  open the window (or appear to hang with no error), since Drive's cloud filesystem is
-  slow (see Findings below).
+  open the window (or appear to hang with no error), since Drive's cloud filesystem is slow
+  (e.g. a plain `cp -R` of ~1,250 small cache files timed out repeatedly; `rsync` was needed).
 - `gedcoms` — a symlink to the **parent** folder containing the GEDCOM files (not the
   `Gedcom files/` subfolder itself — `launch.json`'s args are `gedcoms/Gedcom files/…`,
   `gedcoms/Ancestor Maps/…`, `gedcoms/Family Analyzer Reports/…`):
@@ -145,20 +185,13 @@ it in git:
 
 ## Open / possible next steps
 
-- **Cousin/descendant fetcher — built, not yet run for real.** `GeniAncestorFetcher.
-  fetchWithDescendants` + the `GeniCousinFetch` / `BuildCousinGedcom` CLIs (see
-  Architecture above) exist and are validated (a hand-built synthetic cache fixture
-  round-tripped correctly end-to-end through `GedcomFamilyAnalyzer`'s cousin report; a
-  real-cache offline smoke test against the existing 1,248-profile cache also ran clean,
-  though that cache predates this feature so it had no aunt/uncle/cousin data to surface
-  offline). **What's actually left is a live run**: `GeniCousinFetch <start-id>
-  <up-generations> <out.ged>` with a fresh `GENI_ACCESS_TOKEN`, to pull the previously-
-  unfetched descendant profiles into the cache. Once that GEDCOM exists,
-  `GedcomFamilyAnalyzer` already prints the resulting cousin lists — no further code
-  changes needed there. NOTE: descendant runs can be many thousands of profiles — much
-  bigger than an ancestor run — so a higher rate limit really matters here.
-- Optional: request a higher Geni rate limit (email `api@geni.com`).
+- **Cousin/descendant fetcher — DONE, confirmed working.** `GeniAncestorFetcher.
+  fetchWithDescendants` + `GeniCousinFetch`/`BuildCousinGedcom` (see Architecture above),
+  plus the ancestor/descendant/cousin maps, the current-residence field, and "Private"
+  handling for access-denied profiles. A live `GeniCousinFetch` run for Irit (6 generations)
+  completed successfully and the resulting report looked right. **Mark's own cousin fetch
+  hasn't been run yet** — same command, just his id/cache dir (see `launch.json`).
+- Optional: request a higher Geni rate limit (email `api@geni.com`) — still relevant, a
+  descendant run is much bigger than an ancestor-only one.
 - Optional: Google Geocoding fallback for places Geni left WITHOUT any coordinates
   (distinct from `place-overrides.tsv`, which fixes WRONG coordinates).
-- The project currently lives on Google Drive, which causes slow cache scans; moving it
-  to a local path (with GitHub as backup) would help.
