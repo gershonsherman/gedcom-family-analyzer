@@ -198,6 +198,17 @@ public class GedcomFamilyAnalyzer {
             writeAncestorsHtml(analyzer, targetPerson, writer);
             writer.println("    </div>");
             
+            // Descendant map (only rendered when the data carries coordinates). Unlike the
+            // ancestor map, this prefers current residence over death/birth location —
+            // most descendants, especially recent generations, are still alive.
+            String descendantMapHtml = buildDescendantMapHtml(analyzer, targetPerson);
+            if (!descendantMapHtml.isEmpty()) {
+                writer.println("    <div class=\"section\">");
+                writer.println("        <h2>DESCENDANT MAP</h2>");
+                writer.print(descendantMapHtml);
+                writer.println("    </div>");
+            }
+
             // Descendants
             writer.println("    <div class=\"section\">");
             writer.println("        <h2>DESCENDANTS</h2>");
@@ -266,6 +277,39 @@ public class GedcomFamilyAnalyzer {
             }
         }
         return new AncestorMapWriter().mapSection(points, "ancestor-map", "500px");
+    }
+
+    /**
+     * Build the embeddable descendant-map HTML (target at generation 0, then descendants
+     * by generation, deduped). Unlike the ancestor map, points prefer current residence
+     * over death/birth location — most descendants are still alive — and the generation
+     * color scale uses a much smaller cap, since descendant trees are realistically only
+     * a handful of generations deep. Returns an empty string when no one has coordinates.
+     */
+    private String buildDescendantMapHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson) throws IOException {
+        List<GeniAncestorFetcher.MapPoint> points = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
+        seen.add(targetPerson.getId());
+        GeniAncestorFetcher.MapPoint self = GeniAncestorFetcher.MapPoint.fromPersonPreferCurrent(targetPerson, 0);
+        if (self != null) {
+            points.add(self);
+        }
+
+        Map<Integer, List<Person>> byGen = analyzer.getDescendantsByGeneration(targetPerson);
+        int maxGen = byGen.keySet().stream().max(Integer::compareTo).orElse(0);
+        for (int gen = 1; gen <= maxGen; gen++) {
+            for (Person descendant : byGen.getOrDefault(gen, new ArrayList<>())) {
+                if (!seen.add(descendant.getId())) {
+                    continue;
+                }
+                GeniAncestorFetcher.MapPoint point = GeniAncestorFetcher.MapPoint.fromPersonPreferCurrent(descendant, gen);
+                if (point != null) {
+                    points.add(point);
+                }
+            }
+        }
+        return new AncestorMapWriter().mapSection(points, "descendant-map", "500px", 8);
     }
 
     /**
