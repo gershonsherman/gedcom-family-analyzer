@@ -212,7 +212,7 @@ public class GedcomFamilyAnalyzer {
             // Descendants
             writer.println("    <div class=\"section\">");
             writer.println("        <h2>DESCENDANTS</h2>");
-            writeDescendantsHtml(analyzer, targetPerson, writer);
+            writeDescendantsHtml(analyzer, targetPerson, writer, gedcomData);
             writer.println("    </div>");
             
             // Siblings
@@ -440,9 +440,9 @@ public class GedcomFamilyAnalyzer {
         return n + suffix;
     }
     
-    private void writeDescendantsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
+    private void writeDescendantsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer, GedcomData gedcomData) {
         Map<Integer, List<Person>> descendantsByGen = analyzer.getDescendantsByGeneration(targetPerson);
-        
+
         if (descendantsByGen.isEmpty()) {
             writer.println("        <p>No descendants found.</p>");
         } else {
@@ -450,7 +450,7 @@ public class GedcomFamilyAnalyzer {
             for (int gen = 1; gen <= maxGen; gen++) {
                 List<Person> genList = descendantsByGen.getOrDefault(gen, new ArrayList<>());
                 if (genList.isEmpty()) continue;
-                
+
                 String heading;
                 if (gen == 1) heading = "Children";
                 else if (gen == 2) heading = "Grandchildren";
@@ -459,11 +459,56 @@ public class GedcomFamilyAnalyzer {
                 LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
                 writer.println("        <div class=\"generation\">");
                 writer.println("            <h3>" + heading + " (" + collapsed.size() + ")</h3>");
-                for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
-                    writePersonEntry(writer, entry.getKey(), entry.getValue());
+                if (gen == 1) {
+                    // Children all share the target's own family (already named in the
+                    // info header above) — a per-family sub-heading would be redundant.
+                    for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
+                        writePersonEntry(writer, entry.getKey(), entry.getValue());
+                    }
+                } else {
+                    writeDescendantsGroupedByParentFamily(collapsed, writer, gedcomData);
                 }
                 writer.println("        </div>");
             }
+        }
+    }
+
+    /**
+     * Write descendants (grandchildren or deeper) grouped by their parent family, with a
+     * "Children of X & Y (N):" sub-heading per family — matching how the COUSINS section
+     * groups cousins by family. Useful once there are many descendants across several
+     * different children's families, where a flat list no longer makes clear who's whose.
+     */
+    private void writeDescendantsGroupedByParentFamily(LinkedHashMap<Person, Integer> people, PrintWriter writer, GedcomData gedcomData) {
+        LinkedHashMap<String, LinkedHashMap<Person, Integer>> byFamily = new LinkedHashMap<>();
+        for (Map.Entry<Person, Integer> entry : people.entrySet()) {
+            Person person = entry.getKey();
+            List<String> familyIds = person.getFamilyIdsAsChild();
+            if (familyIds.isEmpty()) {
+                byFamily.computeIfAbsent("", k -> new LinkedHashMap<>()).put(entry.getKey(), entry.getValue());
+            } else {
+                for (String familyId : familyIds) {
+                    byFamily.computeIfAbsent(familyId, k -> new LinkedHashMap<>()).put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        for (Map.Entry<String, LinkedHashMap<Person, Integer>> familyEntry : byFamily.entrySet()) {
+            String familyId = familyEntry.getKey();
+            LinkedHashMap<Person, Integer> members = familyEntry.getValue();
+
+            String familyDisplayName = familyId.isEmpty() ? "Unknown Family" : "Family " + familyId;
+            if (!familyId.isEmpty() && gedcomData.getFamily(familyId) != null) {
+                familyDisplayName = gedcomData.getFamily(familyId).getDisplayName();
+            }
+
+            writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
+            writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of "
+                    + familyDisplayName + " (" + members.size() + "):</strong>");
+            for (Map.Entry<Person, Integer> memberEntry : members.entrySet()) {
+                writePersonEntry(writer, memberEntry.getKey(), memberEntry.getValue());
+            }
+            writer.println("        </div>");
         }
     }
     
