@@ -242,29 +242,41 @@ public class GedcomParser {
                             break;
                     }
                     break;
+                // Birth/death/current-residence date+place: first file to supply a value
+                // wins, matching the coordinate merge rule in processLevel4Tag — otherwise
+                // a later file could overwrite just the place (or date) text while the
+                // matching coordinates stay from an earlier file, leaving them mismatched.
                 case "BIRT":
                     switch (tag) {
                         case "DATE":
-                            person.setBirthDate(value);
+                            if (isBlank(person.getBirthDate())) {
+                                person.setBirthDate(value);
+                            }
                             break;
                         case "PLAC":
-                            person.setBirthPlace(value);
+                            if (isBlank(person.getBirthPlace())) {
+                                person.setBirthPlace(value);
+                            }
                             break;
                     }
                     break;
                 case "DEAT":
                     switch (tag) {
                         case "DATE":
-                            person.setDeathDate(value);
+                            if (isBlank(person.getDeathDate())) {
+                                person.setDeathDate(value);
+                            }
                             break;
                         case "PLAC":
-                            person.setDeathPlace(value);
+                            if (isBlank(person.getDeathPlace())) {
+                                person.setDeathPlace(value);
+                            }
                             break;
                     }
                     break;
                 case "_CURRENT":
                     // Current residence (living people only) has no DATE, just a place.
-                    if ("PLAC".equals(tag)) {
+                    if ("PLAC".equals(tag) && isBlank(person.getCurrentPlace())) {
                         person.setCurrentPlace(value);
                     }
                     break;
@@ -330,6 +342,12 @@ public class GedcomParser {
     /**
      * Process level 4 tags — currently birth/death/current-residence coordinates
      * recorded as BIRT/DEAT/_CURRENT &gt; PLAC &gt; MAP &gt; LATI/LONG.
+     *
+     * <p>When merging multiple files for the same person (see {@link #parseMultipleFiles}),
+     * the first valid coordinate wins rather than the last: a later file's differing
+     * value is ignored instead of silently overwriting. Without this, the winner would
+     * depend on alphabetical file order, which is an accident of naming, not a
+     * deliberate "prefer this source" choice.
      */
     private void processLevel4Tag(String id, String parentTag, String level2Tag, String level3Tag,
                                   String tag, String value) {
@@ -349,19 +367,19 @@ public class GedcomParser {
         Person person = persons.get(id);
         if ("LATI".equals(tag)) {
             if ("BIRT".equals(parentTag)) {
-                person.setBirthLatitude(coord);
+                if (person.getBirthLatitude() == null) person.setBirthLatitude(coord);
             } else if ("DEAT".equals(parentTag)) {
-                person.setDeathLatitude(coord);
+                if (person.getDeathLatitude() == null) person.setDeathLatitude(coord);
             } else {
-                person.setCurrentLatitude(coord);
+                if (person.getCurrentLatitude() == null) person.setCurrentLatitude(coord);
             }
         } else if ("LONG".equals(tag)) {
             if ("BIRT".equals(parentTag)) {
-                person.setBirthLongitude(coord);
+                if (person.getBirthLongitude() == null) person.setBirthLongitude(coord);
             } else if ("DEAT".equals(parentTag)) {
-                person.setDeathLongitude(coord);
+                if (person.getDeathLongitude() == null) person.setDeathLongitude(coord);
             } else {
-                person.setCurrentLongitude(coord);
+                if (person.getCurrentLongitude() == null) person.setCurrentLongitude(coord);
             }
         }
     }
@@ -394,6 +412,11 @@ public class GedcomParser {
     /** True if this surname is the "NN" placeholder for an unknown/no name. */
     private boolean isUnknownSurname(String value) {
         return value != null && value.trim().equalsIgnoreCase("NN");
+    }
+
+    /** True if the string is null or blank after trimming. */
+    private boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
     }
 
     /** True if the value contains non-ASCII (e.g. Hebrew) characters. */
