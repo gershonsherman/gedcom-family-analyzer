@@ -65,7 +65,15 @@ public class GeniClient {
         this.accessToken = accessToken;
         this.cacheDir = cacheDir;
         this.requestDelayMs = requestDelayMs;
-        Files.createDirectories(cacheDir);
+        // Files.createDirectories() checks isDirectory(dir, NOFOLLOW_LINKS) after a failed
+        // create attempt, which does NOT follow the target if it's itself a symlink — so it
+        // throws FileAlreadyExistsException even when cacheDir is a symlink correctly
+        // resolving to an existing directory (e.g. geni-cache -> the shared Drive cache).
+        // Files.isDirectory() (no NOFOLLOW_LINKS) does follow symlinks, so check with that
+        // first and only attempt creation when nothing valid already exists there.
+        if (!Files.isDirectory(cacheDir)) {
+            Files.createDirectories(cacheDir);
+        }
     }
 
     /**
