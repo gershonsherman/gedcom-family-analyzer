@@ -16,8 +16,9 @@ import java.util.Set;
  * GeniFetch re-fetches their updated data from Geni. Matches on each file's
  * focus guid, so it removes exactly the file where that person is the subject.
  *
- * Usage: InvalidateCache <guid> [<guid> ...] [--cache-dir <dir>]
- *   guid may be given as 6000000..., I6000000..., or @I6000000...@.
+ * Usage: InvalidateCache <guid>[,<guid>...] [<guid>[,<guid>...] ...] [--cache-dir <dir>]
+ *   guid may be given as 6000000..., I6000000..., or @I6000000...@. Multiple guids can
+ *   be comma-separated within one arg, space-separated as multiple args, or both.
  *   cache-dir defaults to GeniClient.cacheDirFromEnv() (./geni-cache, or GENI_CACHE_DIR).
  *
  * Matches any cache-version filename (*.v*.json), not just the current
@@ -28,9 +29,11 @@ public class InvalidateCache {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
-            System.out.println("Usage: InvalidateCache <guid> [<guid> ...] [--cache-dir <dir>]");
+            System.out.println("Usage: InvalidateCache <guid>[,<guid>...] [<guid>[,<guid>...] ...] [--cache-dir <dir>]");
             System.out.println("  Deletes the cache file(s) for the given Geni guid(s) so they are refetched.");
             System.out.println("  guid may be 6000000..., I6000000..., or @I6000000...@.");
+            System.out.println("  Multiple guids may be comma-separated within one arg, space-separated as");
+            System.out.println("  multiple args, or both.");
             System.out.println("  --cache-dir: optional cache directory (default ./geni-cache, or GENI_CACHE_DIR).");
             System.exit(1);
         }
@@ -42,7 +45,11 @@ public class InvalidateCache {
                 cacheDir = Paths.get(args[++i]);
                 continue;
             }
-            targets.add(normalizeGuid(args[i]));
+            for (String guid : args[i].split(",")) {
+                if (!guid.trim().isEmpty()) {
+                    targets.add(normalizeGuid(guid));
+                }
+            }
         }
 
         if (!Files.isDirectory(cacheDir)) {
