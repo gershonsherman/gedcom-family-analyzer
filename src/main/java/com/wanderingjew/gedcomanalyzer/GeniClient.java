@@ -103,7 +103,7 @@ public class GeniClient {
                 cacheHits++;
                 if (node.path("_denied").asBoolean(false)) {
                     throw new GeniAccessDeniedException(
-                            "Profile " + profileId + " is privacy-restricted (cached denial).");
+                            "Profile " + profileId + " is privacy-restricted (cached denial).", true);
                 }
                 return node;
             }
@@ -155,7 +155,7 @@ public class GeniClient {
                 // Typically a privacy restriction on this specific profile, not a token
                 // problem — the caller can skip it and keep going.
                 throw new GeniAccessDeniedException("Geni API returned 403 Forbidden for " + apiPath
-                        + " (likely a privacy-restricted profile): " + response.body());
+                        + " (likely a privacy-restricted profile): " + response.body(), false);
             }
             if ((status == 429 || status == 503) && attempt <= 12) {
                 long waitMs = throttleWaitMillis(response, attempt);

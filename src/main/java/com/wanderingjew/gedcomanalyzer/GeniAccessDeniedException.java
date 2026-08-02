@@ -11,7 +11,20 @@ import java.io.IOException;
  * fetch that reaches many living relatives' profiles.
  */
 public class GeniAccessDeniedException extends IOException {
-    public GeniAccessDeniedException(String message) {
+    private final boolean fromCache;
+
+    public GeniAccessDeniedException(String message, boolean fromCache) {
         super(message);
+        this.fromCache = fromCache;
+    }
+
+    /**
+     * True if this denial was already known from a prior run (a cached {@code _denied}
+     * marker), false if it's a fresh 403 from a live call this run — i.e. a denial
+     * we're seeing for the first time, whether because it's newly added on Geni or our
+     * traversal simply hadn't reached it before.
+     */
+    public boolean isFromCache() {
+        return fromCache;
     }
 }

@@ -53,8 +53,11 @@ public class GeniAncestorFetcher {
     // The numeric id of the original start person (generation 0 during ascend), used to
     // anchor the ancestor-positions walk even after descend() adds other generation-0 people.
     private String startNumericId;
-    // Count of profiles skipped due to a 403 (privacy-restricted) response.
+    // Count of profiles skipped due to a 403 (privacy-restricted) response, and how many
+    // of those were newly discovered this run (a live 403) rather than already known from
+    // a prior run's cached denial.
     private int accessDeniedCount = 0;
+    private int newAccessDeniedCount = 0;
 
     private final GedcomWriter writer = new GedcomWriter();
     private String checkpointPath;
@@ -110,7 +113,9 @@ public class GeniAncestorFetcher {
     private void printFetchSummary() {
         System.out.println("Fetched " + profiles.size() + " profiles total ("
                 + client.getRequestCount() + " API calls, " + client.getCacheHits() + " cache hits"
-                + (accessDeniedCount > 0 ? ", " + accessDeniedCount + " access-denied (skipped)" : "") + ").");
+                + (accessDeniedCount > 0 ? ", " + accessDeniedCount + " access-denied (skipped)"
+                        + (newAccessDeniedCount > 0 ? " — " + newAccessDeniedCount + " new this run" : "") : "")
+                + ").");
     }
 
     /**
@@ -247,7 +252,7 @@ public class GeniAncestorFetcher {
             // descendant fetch reaching many living relatives. Record a "Private"
             // placeholder (matching how Geni's own site shows it) rather than silently
             // omitting them, and keep going rather than aborting the whole run.
-            return recordPrivateProfile(id, generation, knownChildUnionId);
+            return recordPrivateProfile(id, generation, knownChildUnionId, !e.isFromCache());
         }
         if (root == null) {
             // Offline mode and this profile isn't cached yet — skip it (partial result).
@@ -301,14 +306,22 @@ public class GeniAncestorFetcher {
      * discovered during ascend instead (as a denied parent), no such fallback is needed:
      * buildGedcomData() already links a person into a union generically via
      * {@code unionPartners}, independent of whether that person has their own childUnionId.
+     *
+     * @param newThisRun true if this denial required a live API call (never seen before —
+     *                   either newly added on Geni or newly reached by this traversal);
+     *                   false if it was already known from a prior run's cached denial.
      */
-    private String recordPrivateProfile(String id, int generation, String knownChildUnionId) {
+    private String recordPrivateProfile(String id, int generation, String knownChildUnionId, boolean newThisRun) {
         if (visited.contains(id)) {
             return null;
         }
         visited.add(id);
         accessDeniedCount++;
-        System.out.println("  Profile " + id + " is private (access denied) — recording as \"Private\".");
+        if (newThisRun) {
+            newAccessDeniedCount++;
+        }
+        System.out.println("  Profile " + id + " is private (access denied"
+                + (newThisRun ? ", NEW" : ", already known from a prior run") + ") — recording as \"Private\".");
 
         ProfileData data = new ProfileData();
         data.guid = "private-" + id;
