@@ -55,6 +55,12 @@ public class GeniClient {
     private int rateWindow = -1;
     private boolean rateReported = false;
 
+    // When the previous request was *sent* (not when its response came back), so pace()
+    // can measure spacing from request-start to request-start — matching how a real rate
+    // limiter counts requests received, and avoiding stacking our sleep on top of however
+    // long the previous call's round trip took. 0 = no previous request yet this run.
+    private long lastRequestStartMs = 0;
+
     public GeniClient(String accessToken, Path cacheDir, long requestDelayMs) throws IOException {
         this.accessToken = accessToken;
         this.cacheDir = cacheDir;
@@ -139,6 +145,7 @@ public class GeniClient {
                     .timeout(Duration.ofSeconds(60))
                     .GET()
                     .build();
+            lastRequestStartMs = System.currentTimeMillis();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             requestCount++;
             readRateHeaders(response);
@@ -180,8 +187,14 @@ public class GeniClient {
             long derived = (long) Math.ceil((rateWindow * 1000.0 / rateLimit) * 1.2);
             spacing = Math.max(spacing, derived);
         }
-        if (spacing > 0) {
-            Thread.sleep(spacing);
+        // Measured from the previous request's *start*, so a slow response doesn't stack
+        // a full extra "spacing" on top of however long it already took.
+        if (spacing > 0 && lastRequestStartMs > 0) {
+            long elapsed = System.currentTimeMillis() - lastRequestStartMs;
+            long remaining = spacing - elapsed;
+            if (remaining > 0) {
+                Thread.sleep(remaining);
+            }
         }
         // If we've nearly exhausted the window, wait for it to reset.
         if (rateRemaining == 0 && rateWindow > 0) {
