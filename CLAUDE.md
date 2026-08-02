@@ -38,6 +38,10 @@ Main analyzer:
   a descendant map, and a cousin map (siblings + 1st-5th cousins) when the GEDCOM has
   coordinates — see `AncestorMapWriter`/`CousinMapWriter` below. The cousin map is also
   written as a standalone `<report>-cousins-map.html` file alongside the main report.
+  Grandchildren and deeper descendant generations are grouped by parent family with a
+  "Children of X & Y (N):" sub-heading (matching the COUSINS section's style) once a
+  generation can span several different families; direct children stay a flat list since
+  they all share the target's own family, already named in the info header above.
 - `GedcomWriter` — writes a `GedcomData` back to a single `.ged`.
 
 ### Geni API fetcher subsystem
@@ -98,10 +102,18 @@ Main analyzer:
 - `CousinMapWriter` — same Leaflet approach, but a **fixed 6-colour scale** by relationship
   degree (red = sibling, orange → purple = 1st → 5th cousin) instead of a continuous
   generation scale, also using `fromPersonPreferCurrent`.
-- `InvalidateCache <guid> … [--cache-dir <dir>]` — deletes a person's cache file (matches on
-  `focus.guid`, which is correct — grep-by-guid is NOT reliable) so the next fetch
-  re-downloads them. Matches any cache-version filename (`*.v*.json`), so it also cleans up
-  orphaned files left behind by a past `CACHE_VERSION` bump, not just the current version.
+- `InvalidateCache <guid>[,<guid>…] … [--cache-dir <dir>]` — deletes a person's cache file
+  (matches on `focus.guid`, which is correct — grep-by-guid is NOT reliable) so the next
+  fetch re-downloads them. Guids may be comma-separated within one arg, space-separated as
+  multiple args, or both. Matches any cache-version filename (`*.v*.json`), so it also
+  cleans up orphaned files left behind by a past `CACHE_VERSION` bump, not just the current
+  version. **Which profile to invalidate:** whoever's own Geni data changed, not
+  necessarily the person you edited — e.g. adding a new child means invalidating an
+  *existing* parent (their `immediate-family` response is what reveals the new child; the
+  new child herself was never cached, so there's nothing to invalidate for her). Cache
+  files are keyed by Geni's short internal `id`, not the long public guid — to find a
+  specific file, `grep -rl '"guid":"<guid>"'` the cache dir rather than guessing the
+  filename.
 - `PlaceOverrides` + `place-overrides.tsv` — manual coordinate corrections for places Geni
   geocoded wrongly (e.g. "Babylon" → Babylon NY). We do NOT geocode; all coords are Geni's.
 
@@ -114,7 +126,20 @@ Main analyzer:
 - **Rate limit:** unapproved app = **1 request / 10s** (adaptive pacing self-throttles to
   ~12s/call, no 429s). A deep run is slow but resumable — rerun the same command with a
   fresh token; the cache skips finished profiles. Higher limits require app approval via
-  email to `api@geni.com` (answer their read-only/personal-use questionnaire).
+  email to `api@geni.com` (answer their read-only/personal-use questionnaire) — **request
+  is still pending** as of this writing.
+- **`GeniClient.pace()` measures spacing from request-*start* to request-*start*, not from
+  the previous response's return.** It used to sleep the full target spacing unconditionally
+  before every request, so a slow response (Geni's `immediate-family` endpoint can take
+  ~20s) got a *full extra* spacing tacked on afterward — observed throughput was ~2-3
+  profiles/min against a ~5/min target. Now it tracks when the previous request was sent
+  and sleeps only the remainder needed to reach the target spacing (never negative) — this
+  can't go below Geni's own per-call response time, which is now the real floor, not our
+  code. **Deliberately not parallelized to go faster**: concurrent requests might dodge the
+  latency floor (if Geni's limit is purely rate-based, not connection-based), but this app
+  is unapproved and under the stricter tier specifically because it behaves conservatively
+  (no 429s) — concurrent connections risk looking abusive and could jeopardize the pending
+  rate-limit approval above. Rejected in favor of just waiting on Geni's approval.
 - **VS Code + `.vscode/launch.json` gotcha:** the `GeniFetch` configs read the token via
   `"env": {"GENI_ACCESS_TOKEN": "${env:GENI_ACCESS_TOKEN}"}`, which only sees a var that
   was exported **before VS Code itself started**. `export`ing in an integrated terminal
@@ -191,7 +216,9 @@ it in git:
   handling for access-denied profiles. A live `GeniCousinFetch` run for Irit (6 generations)
   completed successfully and the resulting report looked right. **Mark's own cousin fetch
   hasn't been run yet** — same command, just his id/cache dir (see `launch.json`).
-- Optional: request a higher Geni rate limit (email `api@geni.com`) — still relevant, a
-  descendant run is much bigger than an ancestor-only one.
+- Higher Geni rate limit request — already submitted, **pending approval** (see Geni API
+  auth & limits above). Still worth following up on; a descendant run is much bigger than
+  an ancestor-only one, and per-call latency (not just rate spacing) is now the real
+  bottleneck either way.
 - Optional: Google Geocoding fallback for places Geni left WITHOUT any coordinates
   (distinct from `place-overrides.tsv`, which fixes WRONG coordinates).
