@@ -3,6 +3,7 @@ package com.wanderingjew.gedcomanalyzer;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * CLI entry point that pulls a person's ancestry from the Geni API and writes it
@@ -46,8 +47,16 @@ public class GeniFetch {
         GeniAncestorFetcher fetcher = new GeniAncestorFetcher(client);
         fetcher.enableCheckpoint(outputFile, 200);
 
-        // On Ctrl-C or unexpected exit, still write whatever was gathered so far.
+        // On Ctrl-C or unexpected exit, still write whatever was gathered so far. Shutdown
+        // hooks run on EVERY JVM exit though, including a normal successful return from
+        // main() below — so without this flag, a fully completed run would still print a
+        // misleading "partial... rerun to resume" message after already writing the final
+        // GEDCOM.
+        AtomicBoolean completed = new AtomicBoolean(false);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (completed.get()) {
+                return;
+            }
             try {
                 GedcomData partial = fetcher.snapshot();
                 if (partial.getPersonCount() > 0) {
@@ -73,6 +82,7 @@ public class GeniFetch {
                     + data.getFamilyCount() + " families.");
             new GedcomWriter().write(data, outputFile);
             System.out.println("GEDCOM written to: " + outputFile);
+            completed.set(true);
         } catch (IOException e) {
             // Most commonly an invalid/expired token (401) — surfaced clearly here.
             System.err.println();
