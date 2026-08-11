@@ -196,6 +196,22 @@ Main analyzer:
 - **A deep descendant fetch hits privacy-restricted (403) profiles often** — expected on
   any run that reaches many living relatives, not an edge case. See the `GeniClient` /
   `GeniAncestorFetcher` "Private" handling above.
+- **A "phantom extra parent" in a report means a stale guid from an old export, not a data
+  entry error.** Geni occasionally merges/renumbers a profile's guid; an older hand-export
+  file still carrying the pre-merge guid and a fresh Geni-API-fetched file carrying the
+  current guid both describe the same real person, but the analyzer merges files by exact
+  `@I…@` id, so it sees two distinct parents. Diagnose by finding the two `FAM` records for
+  the affected child across all `.ged` files — a real duplicate has the *same spouse and
+  child* in both records with only the other parent's guid differing. Fix by editing the
+  older file: repoint the stale `HUSB`/`WIFE` line to the current guid and delete the
+  now-orphaned old INDI record (safe if that record carries no unique data — check it isn't
+  a `CHIL` anywhere and has no dates/parents of its own before deleting). One instance
+  found and fixed 2026-08-11 (Marcus Mordechai Bergwerk's father, Yehuda Bergwerk,
+  duplicated between `GEDCOM All 2025_07_22.ged` and the current Irit fetch). Likely to
+  recur elsewhere as old exports age against fresh API fetches — no general tooling built
+  for it yet (a `PlaceOverrides`-style guid-alias mechanism was considered and explicitly
+  deferred in favor of one-off fixes, since these are rare enough not to be worth the
+  infrastructure yet).
 
 ## Local, machine-specific setup (NOT in the repo — recreate per machine)
 
