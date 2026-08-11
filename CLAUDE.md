@@ -127,31 +127,34 @@ Main analyzer:
   Fetcher", approved by Geni support). Previously unapproved = 1 request/10s. `GeniClient.
   pace()` derives its spacing from the `X-API-Rate-Limit`/`X-API-Rate-Window` response
   headers automatically (`ceil(window*1000/limit * 1.2)` headroom), so no code change was
-  needed to pick up the new limit. **BUT this does NOT translate into ~40x faster
-  fetching** — see the very next bullet: even at the old 1/10s tier, the ~12s pacing
-  spacing was never actually the throughput bottleneck, because Geni's `immediate-family`
-  endpoint's own response latency (~20s/call) was already the binding constraint (20s >
-  12s). Since pacing is measured start-to-start, the new 300ms floor just means pacing
-  gets entirely absorbed into that same ~20s server latency — observed throughput stays
-  roughly ~3 profiles/min either way. The real win from approval is smaller and different:
-  no more risk of ever hitting 429s under bursty conditions, and access to the new
-  `profile/ancestors` endpoint (fetch a person's whole ancestor line in fewer round trips
-  than our BFS over `immediate-family`) — not yet used, but worth evaluating since it cuts
-  *call count*, which is the lever that actually matters given latency-per-call is the
-  bottleneck, not spacing.
+  needed to pick up the new limit. **Confirmed with a real full-cache-wipe refetch of
+  Irit's tree the same night: ~100 profiles/min sustained end-to-end**, 1,839 profiles, no
+  slowdown at any generation depth or through heavy 403-denial clusters. This genuinely is
+  a large, real speedup — see the note below on why we'd earlier (wrongly) predicted
+  otherwise. Approval also grants the `profile/ancestors` endpoint (fetch a person's whole
+  ancestor line in fewer round trips than our BFS over `immediate-family`) — not yet used,
+  lower priority now that plain rate approval already fixed throughput.
+- **Historical per-call-latency claim did NOT reproduce and should be treated as stale.**
+  An earlier debugging session (weeks prior) measured ~2-3 profiles/min even after fixing
+  a pacing bug, and attributed it to Geni's `immediate-family` endpoint itself taking ~20s
+  to respond (independent of rate-limit spacing) — a real measurement at the time. Based on
+  that, we predicted the new 40/10s approval wouldn't help since per-call latency, not
+  spacing, was assumed to be the floor. That prediction was wrong: the Aug 10 live refetch
+  ran at ~100/min, ~30x the old figure, with no sign of a ~20s-per-call latency floor.
+  Whatever caused the original ~20s figure — Geni-side conditions at the time, or something
+  about the unapproved tier beyond pure rate spacing — it isn't happening now. Moral: don't
+  trust either old throughput number as a permanent constant; if fetch speed matters again,
+  measure fresh rather than reasoning from this history.
 - **`GeniClient.pace()` measures spacing from request-*start* to request-*start*, not from
   the previous response's return.** It used to sleep the full target spacing unconditionally
-  before every request, so a slow response (Geni's `immediate-family` endpoint can take
-  ~20s) got a *full extra* spacing tacked on afterward — observed throughput was ~2-3
-  profiles/min against a ~5/min target. Now it tracks when the previous request was sent
-  and sleeps only the remainder needed to reach the target spacing (never negative) — this
-  can't go below Geni's own per-call response time, which is now the real floor, not our
-  code. **Deliberately not parallelized to go faster**: concurrent requests might dodge the
-  latency floor (if Geni's limit is purely rate-based, not connection-based), but this app
-  behaves conservatively (no 429s) specifically to protect its standing with Geni —
-  concurrent connections risk looking abusive. Rejected in favor of waiting on rate-limit
-  approval, which has now arrived and made the point largely moot (40 req/10s at the
-  ~300ms floor is already fast).
+  before every request, so a slow response got a *full extra* spacing tacked on afterward.
+  Now it tracks when the previous request was sent and sleeps only the remainder needed to
+  reach the target spacing (never negative). **Deliberately not parallelized to go faster**:
+  concurrent requests might help throughput, but this app behaves conservatively (no 429s)
+  specifically to protect its standing with Geni — concurrent connections risk looking
+  abusive regardless of approval status. Rejected in favor of waiting on rate-limit
+  approval, which arrived and, per the measurement above, already made fetches fast enough
+  that concurrency isn't worth the reputational risk.
 - **VS Code + `.vscode/launch.json` gotcha:** the `GeniFetch` configs read the token via
   `"env": {"GENI_ACCESS_TOKEN": "${env:GENI_ACCESS_TOKEN}"}`, which only sees a var that
   was exported **before VS Code itself started**. `export`ing in an integrated terminal
@@ -229,9 +232,10 @@ it in git:
   completed successfully and the resulting report looked right. **Mark's own cousin fetch
   hasn't been run yet** — same command, just his id/cache dir (see `launch.json`).
 - **Higher Geni rate limit — DONE, approved 2026-08-10** (40 req/10s; see Geni API auth &
-  limits above). No code change needed. **Does not by itself fix fetch speed** — per-call
-  response latency (~20s), not rate spacing, was already the real bottleneck even at the
-  old tier. The `profile/ancestors` endpoint (also newly unlocked) is the more promising
-  lever since it reduces call *count*; worth prototyping in `GeniAncestorFetcher`.
+  limits above). No code change needed, and confirmed with a real full refetch of Irit's
+  tree the same night: ~100 profiles/min sustained, ~30x the old ~3/min figure — this
+  genuinely fixed fetch speed, contrary to an initial (wrong) prediction that per-call
+  latency would still bottleneck it. `profile/ancestors` (also newly unlocked) remains an
+  option to cut call count further but is now lower priority.
 - Optional: Google Geocoding fallback for places Geni left WITHOUT any coordinates
   (distinct from `place-overrides.tsv`, which fixes WRONG coordinates).
