@@ -194,7 +194,6 @@ public class GedcomFamilyAnalyzer {
 
             // Ancestors
             writer.println("    <div class=\"section\">");
-            writer.println("        <h2>ANCESTORS</h2>");
             writeAncestorsHtml(analyzer, targetPerson, writer);
             writer.println("    </div>");
             
@@ -211,7 +210,6 @@ public class GedcomFamilyAnalyzer {
 
             // Descendants
             writer.println("    <div class=\"section\">");
-            writer.println("        <h2>DESCENDANTS</h2>");
             writeDescendantsHtml(analyzer, targetPerson, writer, gedcomData);
             writer.println("    </div>");
             
@@ -239,7 +237,6 @@ public class GedcomFamilyAnalyzer {
 
             // Cousins
             writer.println("    <div class=\"section\">");
-            writer.println("        <h2>COUSINS</h2>");
             writeCousinsHtml(analyzer, targetPerson, writer, gedcomData);
             writer.println("    </div>");
             
@@ -360,8 +357,9 @@ public class GedcomFamilyAnalyzer {
 
     private void writeAncestorsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
         Map<Integer, List<Person>> ancestorsByGen = analyzer.getAncestorsByGeneration(targetPerson);
-        
+
         if (ancestorsByGen.isEmpty()) {
+            writer.println("        <h2>ANCESTORS</h2>");
             writer.println("        <p>No ancestors found.</p>");
         } else {
             int maxGen = ancestorsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
@@ -375,11 +373,25 @@ public class GedcomFamilyAnalyzer {
                 }
             }
 
+            // Collapse each generation up front so the section total (sum of the
+            // per-generation counts below) can be shown in the heading before the
+            // per-generation breakdown. A pedigree-collapse ancestor who appears in more
+            // than one generation is counted once per generation here, same as the
+            // per-generation subtotals it's summing — not deduplicated across generations.
+            LinkedHashMap<Integer, LinkedHashMap<Person, Integer>> collapsedByGen = new LinkedHashMap<>();
+            int total = 0;
             for (int gen = 1; gen <= maxGen; gen++) {
                 List<Person> genList = ancestorsByGen.getOrDefault(gen, new ArrayList<>());
                 if (genList.isEmpty()) continue;
-
                 LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
+                collapsedByGen.put(gen, collapsed);
+                total += collapsed.size();
+            }
+
+            writer.println("        <h2>ANCESTORS (" + total + ")</h2>");
+            for (Map.Entry<Integer, LinkedHashMap<Person, Integer>> genEntry : collapsedByGen.entrySet()) {
+                int gen = genEntry.getKey();
+                LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
                 writer.println("        <div class=\"generation\">");
                 writer.println("            <h3>" + ancestorGenLabelPlural(gen) + " (" + collapsed.size() + ")</h3>");
                 for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
@@ -444,19 +456,33 @@ public class GedcomFamilyAnalyzer {
         Map<Integer, List<Person>> descendantsByGen = analyzer.getDescendantsByGeneration(targetPerson);
 
         if (descendantsByGen.isEmpty()) {
+            writer.println("        <h2>DESCENDANTS</h2>");
             writer.println("        <p>No descendants found.</p>");
         } else {
             int maxGen = descendantsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
+
+            // Collapse each generation up front so the section total (sum of the
+            // per-generation counts below) can be shown in the heading first.
+            LinkedHashMap<Integer, LinkedHashMap<Person, Integer>> collapsedByGen = new LinkedHashMap<>();
+            int total = 0;
             for (int gen = 1; gen <= maxGen; gen++) {
                 List<Person> genList = descendantsByGen.getOrDefault(gen, new ArrayList<>());
                 if (genList.isEmpty()) continue;
+                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
+                collapsedByGen.put(gen, collapsed);
+                total += collapsed.size();
+            }
+
+            writer.println("        <h2>DESCENDANTS (" + total + ")</h2>");
+            for (Map.Entry<Integer, LinkedHashMap<Person, Integer>> genEntry : collapsedByGen.entrySet()) {
+                int gen = genEntry.getKey();
+                LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
 
                 String heading;
                 if (gen == 1) heading = "Children";
                 else if (gen == 2) heading = "Grandchildren";
                 else heading = "Great " + (gen - 2) + " Grandchildren";
 
-                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
                 writer.println("        <div class=\"generation\">");
                 writer.println("            <h3>" + heading + " (" + collapsed.size() + ")</h3>");
                 if (gen == 1) {
@@ -567,52 +593,62 @@ public class GedcomFamilyAnalyzer {
     }
 
     private void writeCousinsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer, GedcomData gedcomData) {
-        boolean foundAnyCousins = false;
+        // Collapse every degree up front so the section total (sum of each degree's
+        // subtotal below) can be shown in the heading before the per-degree breakdown.
+        LinkedHashMap<Integer, Map<String, LinkedHashMap<Person, Integer>>> collapsedByDegree = new LinkedHashMap<>();
+        LinkedHashMap<Integer, Integer> countByDegree = new LinkedHashMap<>();
+        int grandTotal = 0;
         for (int degree = 1; degree <= 6; degree++) {
             Map<String, List<Person>> groupedCousins = analyzer.getCousinsGroupedByFamily(targetPerson, degree);
-            if (!groupedCousins.isEmpty()) {
-                foundAnyCousins = true;
-                String degreeText = degree == 1 ? "1st" : degree == 2 ? "2nd" : degree == 3 ? "3rd" : degree + "th";
-                
-                // Collapse duplicates within each family group, then count unique cousins.
-                Map<String, LinkedHashMap<Person, Integer>> collapsedGroups = new LinkedHashMap<>();
-                int totalCount = 0;
-                for (Map.Entry<String, List<Person>> entry : groupedCousins.entrySet()) {
-                    LinkedHashMap<Person, Integer> collapsed = collapseByPerson(entry.getValue());
-                    collapsedGroups.put(entry.getKey(), collapsed);
-                    totalCount += collapsed.size();
-                }
+            if (groupedCousins.isEmpty()) continue;
 
-                writer.println("        <h3>" + degreeText + " Cousins (" + totalCount + ")</h3>");
-
-                for (Map.Entry<String, LinkedHashMap<Person, Integer>> entry : collapsedGroups.entrySet()) {
-                    String familyId = entry.getKey();
-                    LinkedHashMap<Person, Integer> cousins = entry.getValue();
-
-                    // Get family display name
-                    String familyDisplayName = "Family " + familyId;
-                    if (gedcomData.getFamily(familyId) != null) {
-                        familyDisplayName = gedcomData.getFamily(familyId).getDisplayName();
-                    }
-
-                    if (cousins.size() > 1) {
-                        writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
-                        writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + " (" + cousins.size() + " cousins):</strong>");
-                    } else {
-                        writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
-                        writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + ":</strong>");
-                    }
-
-                    for (Map.Entry<Person, Integer> cousinEntry : cousins.entrySet()) {
-                        writePersonEntry(writer, cousinEntry.getKey(), cousinEntry.getValue());
-                    }
-                    writer.println("        </div>");
-                }
+            Map<String, LinkedHashMap<Person, Integer>> collapsedGroups = new LinkedHashMap<>();
+            int totalCount = 0;
+            for (Map.Entry<String, List<Person>> entry : groupedCousins.entrySet()) {
+                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(entry.getValue());
+                collapsedGroups.put(entry.getKey(), collapsed);
+                totalCount += collapsed.size();
             }
+            collapsedByDegree.put(degree, collapsedGroups);
+            countByDegree.put(degree, totalCount);
+            grandTotal += totalCount;
         }
-        
-        if (!foundAnyCousins) {
+
+        writer.println("        <h2>COUSINS (" + grandTotal + ")</h2>");
+
+        if (collapsedByDegree.isEmpty()) {
             writer.println("        <p>No cousins found.</p>");
+            return;
+        }
+
+        for (Map.Entry<Integer, Map<String, LinkedHashMap<Person, Integer>>> degreeEntry : collapsedByDegree.entrySet()) {
+            int degree = degreeEntry.getKey();
+            String degreeText = degree == 1 ? "1st" : degree == 2 ? "2nd" : degree == 3 ? "3rd" : degree + "th";
+            writer.println("        <h3>" + degreeText + " Cousins (" + countByDegree.get(degree) + ")</h3>");
+
+            for (Map.Entry<String, LinkedHashMap<Person, Integer>> entry : degreeEntry.getValue().entrySet()) {
+                String familyId = entry.getKey();
+                LinkedHashMap<Person, Integer> cousins = entry.getValue();
+
+                // Get family display name
+                String familyDisplayName = "Family " + familyId;
+                if (gedcomData.getFamily(familyId) != null) {
+                    familyDisplayName = gedcomData.getFamily(familyId).getDisplayName();
+                }
+
+                if (cousins.size() > 1) {
+                    writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
+                    writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + " (" + cousins.size() + " cousins):</strong>");
+                } else {
+                    writer.println("        <div style=\"margin-left: 20px; margin-bottom: 10px;\">");
+                    writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of " + familyDisplayName + ":</strong>");
+                }
+
+                for (Map.Entry<Person, Integer> cousinEntry : cousins.entrySet()) {
+                    writePersonEntry(writer, cousinEntry.getKey(), cousinEntry.getValue());
+                }
+                writer.println("        </div>");
+            }
         }
     }
 
