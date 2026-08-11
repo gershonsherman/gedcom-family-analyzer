@@ -123,11 +123,22 @@ Main analyzer:
   user controls (localhost was rejected). Get a token by visiting
   `https://www.geni.com/platform/oauth/authorize?client_id=<key>&redirect_uri=<callback>&response_type=token`
   while logged in, then read `#access_token=…` from the address bar. Token lasts ~24h.
-- **Rate limit:** unapproved app = **1 request / 10s** (adaptive pacing self-throttles to
-  ~12s/call, no 429s). A deep run is slow but resumable — rerun the same command with a
-  fresh token; the cache skips finished profiles. Higher limits require app approval via
-  email to `api@geni.com` (answer their read-only/personal-use questionnaire) — **request
-  is still pending** as of this writing.
+- **Rate limit: approved 2026-08-10** at **40 requests / 10s** (App ID 2102 "Ancestor
+  Fetcher", approved by Geni support). Previously unapproved = 1 request/10s. `GeniClient.
+  pace()` derives its spacing from the `X-API-Rate-Limit`/`X-API-Rate-Window` response
+  headers automatically (`ceil(window*1000/limit * 1.2)` headroom), so no code change was
+  needed to pick up the new limit. **BUT this does NOT translate into ~40x faster
+  fetching** — see the very next bullet: even at the old 1/10s tier, the ~12s pacing
+  spacing was never actually the throughput bottleneck, because Geni's `immediate-family`
+  endpoint's own response latency (~20s/call) was already the binding constraint (20s >
+  12s). Since pacing is measured start-to-start, the new 300ms floor just means pacing
+  gets entirely absorbed into that same ~20s server latency — observed throughput stays
+  roughly ~3 profiles/min either way. The real win from approval is smaller and different:
+  no more risk of ever hitting 429s under bursty conditions, and access to the new
+  `profile/ancestors` endpoint (fetch a person's whole ancestor line in fewer round trips
+  than our BFS over `immediate-family`) — not yet used, but worth evaluating since it cuts
+  *call count*, which is the lever that actually matters given latency-per-call is the
+  bottleneck, not spacing.
 - **`GeniClient.pace()` measures spacing from request-*start* to request-*start*, not from
   the previous response's return.** It used to sleep the full target spacing unconditionally
   before every request, so a slow response (Geni's `immediate-family` endpoint can take
@@ -137,9 +148,10 @@ Main analyzer:
   can't go below Geni's own per-call response time, which is now the real floor, not our
   code. **Deliberately not parallelized to go faster**: concurrent requests might dodge the
   latency floor (if Geni's limit is purely rate-based, not connection-based), but this app
-  is unapproved and under the stricter tier specifically because it behaves conservatively
-  (no 429s) — concurrent connections risk looking abusive and could jeopardize the pending
-  rate-limit approval above. Rejected in favor of just waiting on Geni's approval.
+  behaves conservatively (no 429s) specifically to protect its standing with Geni —
+  concurrent connections risk looking abusive. Rejected in favor of waiting on rate-limit
+  approval, which has now arrived and made the point largely moot (40 req/10s at the
+  ~300ms floor is already fast).
 - **VS Code + `.vscode/launch.json` gotcha:** the `GeniFetch` configs read the token via
   `"env": {"GENI_ACCESS_TOKEN": "${env:GENI_ACCESS_TOKEN}"}`, which only sees a var that
   was exported **before VS Code itself started**. `export`ing in an integrated terminal
@@ -216,9 +228,10 @@ it in git:
   handling for access-denied profiles. A live `GeniCousinFetch` run for Irit (6 generations)
   completed successfully and the resulting report looked right. **Mark's own cousin fetch
   hasn't been run yet** — same command, just his id/cache dir (see `launch.json`).
-- Higher Geni rate limit request — already submitted, **pending approval** (see Geni API
-  auth & limits above). Still worth following up on; a descendant run is much bigger than
-  an ancestor-only one, and per-call latency (not just rate spacing) is now the real
-  bottleneck either way.
+- **Higher Geni rate limit — DONE, approved 2026-08-10** (40 req/10s; see Geni API auth &
+  limits above). No code change needed. **Does not by itself fix fetch speed** — per-call
+  response latency (~20s), not rate spacing, was already the real bottleneck even at the
+  old tier. The `profile/ancestors` endpoint (also newly unlocked) is the more promising
+  lever since it reduces call *count*; worth prototyping in `GeniAncestorFetcher`.
 - Optional: Google Geocoding fallback for places Geni left WITHOUT any coordinates
   (distinct from `place-overrides.tsv`, which fixes WRONG coordinates).
