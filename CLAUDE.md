@@ -41,7 +41,12 @@ Main analyzer:
   Grandchildren and deeper descendant generations are grouped by parent family with a
   "Children of X & Y (N):" sub-heading (matching the COUSINS section's style) once a
   generation can span several different families; direct children stay a flat list since
-  they all share the target's own family, already named in the info header above.
+  they all share the target's own family, already named in the info header above. The
+  ANCESTORS/DESCENDANTS/COUSINS section headings each show a total in parens (e.g.
+  "ANCESTORS (62)") — the literal sum of the per-generation/per-degree sub-counts already
+  shown underneath, not a distinct-people count, so a pedigree-collapse ancestor appearing
+  in more than one generation is counted once per generation, same as the sub-counts always
+  did.
 - `GedcomWriter` — writes a `GedcomData` back to a single `.ged`.
 
 ### Geni API fetcher subsystem
