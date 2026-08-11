@@ -249,9 +249,10 @@ it in git:
 - **Cousin/descendant fetcher — DONE, confirmed working.** `GeniAncestorFetcher.
   fetchWithDescendants` + `GeniCousinFetch`/`BuildCousinGedcom` (see Architecture above),
   plus the ancestor/descendant/cousin maps, the current-residence field, and "Private"
-  handling for access-denied profiles. A live `GeniCousinFetch` run for Irit (6 generations)
-  completed successfully and the resulting report looked right. **Mark's own cousin fetch
-  hasn't been run yet** — same command, just his id/cache dir (see `launch.json`).
+  handling for access-denied profiles. Live `GeniCousinFetch` runs completed successfully
+  for both Irit (6 generations, most recently a full cache-wipe refetch 2026-08-10 after
+  extensive Geni edits — see the rate-limit section above) and Mark (`Mark-geni-cousins.ged`,
+  825KB, completed 2026-08-02) and the resulting reports looked right.
 - **Higher Geni rate limit — DONE, approved 2026-08-10** (40 req/10s; see Geni API auth &
   limits above). No code change needed, and confirmed with a real full refetch of Irit's
   tree the same night: ~100 profiles/min sustained, ~30x the old ~3/min figure — this
