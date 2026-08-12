@@ -64,11 +64,12 @@ public class CousinMapWriter {
      * Return an embeddable HTML fragment (a sized div plus a self-contained script)
      * that renders the map into an element with the given id. The caller must include
      * {@link AncestorMapWriter#leafletHead()} in the page head. Returns an empty string
-     * if there are no points, so callers can simply skip an empty map.
+     * if there are fewer than two points (a lone marker isn't a useful map), so callers
+     * can simply skip the section.
      */
     public String mapSection(List<GeniAncestorFetcher.MapPoint> points, String divId, String heightCss)
             throws IOException {
-        if (points == null || points.isEmpty()) {
+        if (points == null || points.size() < 2) {
             return "";
         }
         String json = mapper.writeValueAsString(points).replace("</", "<\\/");

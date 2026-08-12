@@ -68,7 +68,8 @@ public class AncestorMapWriter {
      * that renders the map into an element with the given id, using the default
      * generation-color cap (tuned for ancestor trees). The caller must include
      * {@link #leafletHead()} in the page head. Returns an empty string if there are
-     * no points, so callers can simply skip an empty map.
+     * fewer than two points (a lone marker isn't a useful map), so callers can simply
+     * skip the section.
      */
     public String mapSection(List<GeniAncestorFetcher.MapPoint> points, String divId, String heightCss)
             throws IOException {
@@ -82,7 +83,10 @@ public class AncestorMapWriter {
      */
     public String mapSection(List<GeniAncestorFetcher.MapPoint> points, String divId, String heightCss, int cap)
             throws IOException {
-        if (points == null || points.isEmpty()) {
+        // A single marker isn't a useful map — just show the plain list instead. Two or
+        // more still renders even if they land on the same coordinates (the in-page script
+        // already jitters same-location markers apart so they stay visible as separate pins).
+        if (points == null || points.size() < 2) {
             return "";
         }
         String json = mapper.writeValueAsString(points).replace("</", "<\\/");
