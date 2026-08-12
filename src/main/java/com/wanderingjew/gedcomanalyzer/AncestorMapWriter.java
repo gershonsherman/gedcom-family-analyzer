@@ -113,9 +113,23 @@ public class AncestorMapWriter {
     // Map-building logic, parameterised by the container id (uses local vars inside an IIFE).
     private static String script(String divId, int cap) {
         return String.join("\n",
-            // Spread the rainbow over the first CAP generations; everything deeper is violet.",
+            // CAP is a ceiling (how deep the rainbow spread ever goes, e.g. a very deep
+            // ancestor tree with pedigree collapse) — but the actual spread is scaled down
+            // to whatever generation this particular tree really reaches, so a shallow tree
+            // (e.g. 5th great-grandparents = generation 7) uses the full red-to-violet range
+            // instead of bunching everyone into the low, reddish end of a scale tuned for 40.
             "const CAP = " + cap + ";",
-            "function color(g) { const c = Math.min(g, CAP); return `hsl(${(c / CAP) * 270}, 85%, 50%)`; }",
+            "const dataMaxGen = points.reduce((m, p) => Math.max(m, p.generation), 0);",
+            "const EFFECTIVE_MAX = Math.max(1, Math.min(CAP, dataMaxGen));",
+            // Above roughly this many generations, per-generation hue steps become too small
+            // to tell apart by eye — group several generations per colour band instead of a
+            // smooth gradient. Below it, each generation still gets its own distinct colour
+            // (BUCKET_SIZE resolves to 1, so bands == generations, same as a plain gradient).
+            "const MAX_BANDS = 8;",
+            "const BUCKET_SIZE = Math.max(1, Math.ceil(EFFECTIVE_MAX / MAX_BANDS));",
+            "const NUM_BANDS = Math.ceil(EFFECTIVE_MAX / BUCKET_SIZE);",
+            "function bandOf(g) { return g <= 0 ? 0 : Math.min(NUM_BANDS, Math.ceil(Math.min(g, EFFECTIVE_MAX) / BUCKET_SIZE)); }",
+            "function color(g) { return `hsl(${(bandOf(g) / NUM_BANDS) * 270}, 85%, 50%)`; }",
             "function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>\"']/g,",
             "  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c])); }",
             "function pinIcon(g) {",
@@ -148,12 +162,16 @@ public class AncestorMapWriter {
             "legend.onAdd = function () {",
             "  const div = L.DomUtil.create('div', 'legend');",
             "  div.innerHTML = '<b>Generation</b><br>';",
-            "  const steps = [...new Set([0, 1, 2, 3, 4, 5].map(i => Math.round((i / 5) * CAP)))];",
-            "  steps.forEach(g => {",
-            "    const label = g === 0 ? 'you' : (g >= CAP ? CAP + '+' : g);",
+            "  div.innerHTML += '<div class=\"row\"><span class=\"swatch\" style=\"background:' +",
+            "    color(0) + '\"></span>you</div>';",
+            "  for (let b = 1; b <= NUM_BANDS; b++) {",
+            "    const start = (b - 1) * BUCKET_SIZE + 1;",
+            "    const end = Math.min(b * BUCKET_SIZE, EFFECTIVE_MAX);",
+            "    let label = start === end ? String(start) : start + '-' + end;",
+            "    if (b === NUM_BANDS && dataMaxGen > EFFECTIVE_MAX) label += '+';",
             "    div.innerHTML += '<div class=\"row\"><span class=\"swatch\" style=\"background:' +",
-            "      color(g) + '\"></span>' + label + '</div>';",
-            "  });",
+            "      `hsl(${(b / NUM_BANDS) * 270}, 85%, 50%)` + '\"></span>' + label + '</div>';",
+            "  }",
             "  return div;",
             "};",
             "legend.addTo(map);"
