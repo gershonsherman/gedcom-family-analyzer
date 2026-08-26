@@ -119,6 +119,10 @@ Main analyzer:
   files are keyed by Geni's short internal `id`, not the long public guid — to find a
   specific file, `grep -rl '"guid":"<guid>"'` the cache dir rather than guessing the
   filename.
+- `LineageEndpoints <gedcom-dir> <person-id>` — EXPLORATORY, offline (reads the GEDCOM
+  directory directly, no Geni API), not yet wired into the main report. Prototype for the
+  "label ancestors by documented lineage" feature — see its own javadoc and "Open /
+  possible next steps" below for what it computes and the open design question.
 - `PlaceOverrides` + `place-overrides.tsv` — manual coordinate corrections for places Geni
   geocoded wrongly (e.g. "Babylon" → Babylon NY). We do NOT geocode; all coords are Geni's.
 
@@ -186,6 +190,19 @@ Main analyzer:
 
 ## Findings that shaped the work
 
+- **Sharing a cache directory across two close cousins' fetches works and pays off
+  substantially.** When Nini (Doreen, Irit's cousin) got her own ancestor + cousin fetch
+  (2026-08-26), her `GeniFetch`/`GeniCousinFetch` were pointed at Irit's existing
+  `geni-cache/6000000097910553827` instead of a fresh directory, since the cache is keyed
+  purely by each profile's own Geni id — it has no concept of "whose tree." Result: her
+  ancestor fetch got 27/80 profiles (34%) from cache, and her cousin fetch got 997/1,320
+  (75.5%!) from cache. No effect on Irit's own report either — `FamilyRelationshipAnalyzer`
+  computes ancestors/descendants/cousins by graph traversal from the specific target
+  person's own id, so extra profiles from Nini's unrelated side just sit inert, unreachable
+  from Irit's own id. Two separate `.ged` output filenames are still required though —
+  each fetch overwrites its output completely rather than merging, so sharing an output
+  filename (a mistake caught before running it) would have clobbered one person's file
+  with the other's assembled data.
 - **Geni counts ahnentafel positions; our histogram counts distinct people.** With heavy
   cousin-marriage pedigree collapse these diverge widely at depth (e.g. gen 20: ~445
   positions vs ~177 distinct). Recomputing our positions matches Geni within ±1–2% →
@@ -246,6 +263,35 @@ it in git:
 
 ## Open / possible next steps
 
+- **IN PROGRESS: label ancestors by documented lineage** (started 2026-08-26). Mark wants
+  notable/documented ancestors (e.g. the Exilarch line, Rashi's family) annotated in the
+  report, not just shown as bare names. `LineageEndpoints` (new, exploratory/not yet
+  wired into the report — see its own javadoc for full findings) computes, for a given
+  person: the count of distinct ahnentafel "lines" (root-to-leaf paths through the
+  ancestor binary tree, NOT deduped across pedigree-collapse paths the way
+  `getAncestorsByGeneration` is), ranks distinct endpoint ancestors by how many lines
+  terminate at each (a "worth checking first" proxy, not notability itself), and
+  auto-flags likely-titled names by regex (no separate title field exists — any signal
+  is embedded in the free-text name). Real run against Mark's tree: 64,540 lines / 312
+  distinct endpoints (the longest reaching 102 generations back, an unbroken Exilarch
+  succession to Zerubbabel, ~500s BCE — matches Mark's "back to 600 BCE"). Expanding
+  scope to "any ancestor anywhere in the tree" (not just the 312 endpoints, since a
+  notable figure like Rashi can be a mid-line waypoint whose own ancestry continues
+  further back) found 1,193 total distinct ancestors, 445 of them (37%!) auto-flagged —
+  this tree contains a substantial documented rabbinic genealogy (~1300s-1700s
+  Poland/Germany: Katzenellenbogen, Horowitz, Spira, Isserles/"Rama", Loew/"Maharal",
+  Luria, Weil, Auerbach, among others), not just a handful of isolated notable people. A
+  batch of real web searches against the ~20 top-multiplicity endpoints confirmed nearly
+  all as genuine historical figures (Kalonymus dynasty of Mainz; Rashi's own
+  family/students — Rashbam, RIBaN, Ri HaZaken, Ri Bekhor Shor; the Abin/Abun family) —
+  only one name came back inconclusive. **Unresolved open question, pick up here first:**
+  given how many of the 445 already carry an obvious title in their own name text, is
+  that self-evident enough to label without individual web research (saving actual
+  research effort for genuinely ambiguous names, like the original top-20 batch before
+  we knew who "Shimon, of Le Mans" was)? Mark signed off before answering. Also still
+  undecided: where the resulting labels/notes should live (a new field on `Person`? a
+  `place-overrides.tsv`-style annotation file? report-display-only, not fed back into the
+  GEDCOM?) and how they'd render in the HTML report.
 - **Cousin/descendant fetcher — DONE, confirmed working.** `GeniAncestorFetcher.
   fetchWithDescendants` + `GeniCousinFetch`/`BuildCousinGedcom` (see Architecture above),
   plus the ancestor/descendant/cousin maps, the current-residence field, and "Private"
