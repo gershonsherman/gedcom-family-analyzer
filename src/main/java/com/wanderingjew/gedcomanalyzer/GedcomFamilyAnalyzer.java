@@ -414,7 +414,17 @@ public class GedcomFamilyAnalyzer {
                                       Map<String, java.util.TreeSet<Integer>> personGens,
                                       PrintWriter writer) {
         LineageAnalysis lineage = new LineageAnalysis(targetPerson);
-        List<Person> notable = lineage.notableAncestors();
+        NotableAnnotations annotations = NotableAnnotations.getDefault();
+        // Notable = flagged by the name heuristic OR carrying a SUBSTANTIAL Geni about_me
+        // (long encyclopedic prose, not a short imported GEDCOM note), which catches title-less
+        // notables the name regex misses (e.g. the Abarbanel) without flooding the list with
+        // ordinary relatives whose about_me is just a one-line note.
+        List<Person> notable = new ArrayList<>();
+        for (Person p : lineage.allAncestors()) {
+            if (LineageAnalysis.looksNotable(p.getDisplayName()) || annotations.isNotable(guidOf(p))) {
+                notable.add(p);
+            }
+        }
         List<LineageAnalysis.Line> deepest = lineage.deepestLines(15);
         if (notable.isEmpty() && deepest.isEmpty()) {
             return;
@@ -431,7 +441,7 @@ public class GedcomFamilyAnalyzer {
 
         writer.println("        <div class=\"generation\">");
         writer.println("            <h3>Notable Ancestral Lines</h3>");
-        writer.println("            <p style=\"color:#7f8c8d; font-style:italic;\">Auto-detected from titles / known families in the names — a starting point, not individually verified.</p>");
+        writer.println("            <p style=\"color:#7f8c8d; font-style:italic;\">Auto-detected from titles / known families in the names, plus anyone with a Geni biography — a starting point, not individually verified.</p>");
 
         if (!notable.isEmpty()) {
             writer.println("            <strong style=\"color:#8e44ad; font-size:16px;\">Notable ancestors (" + notable.size() + "):</strong>");
@@ -454,10 +464,18 @@ public class GedcomFamilyAnalyzer {
                     int gen = closestGen.apply(p);
                     String rel = (gen == Integer.MAX_VALUE) ? "" : " — " + ancestorGenLabelSingular(gen);
                     String dates = p.getLifeDates();
+                    String guid = guidOf(p);
                     writer.println("                <div class=\"person\">");
                     writer.println("                    <span class=\"person-name\">" + p.getDisplayName() + "</span>"
                             + "<span class=\"cross-ref\">" + rel + "</span>"
-                            + (dates.isEmpty() ? "" : " <span class=\"life-dates\">(" + dates + ")</span>"));
+                            + (dates.isEmpty() ? "" : " <span class=\"life-dates\">(" + dates + ")</span>")
+                            + (guid == null ? "" : " <a href=\"" + geniProfileUrl(guid)
+                                    + "\" target=\"_blank\" style=\"font-size:12px;\">[Geni]</a>"));
+                    String bio = annotations.bio(guid);
+                    if (bio != null) {
+                        writer.println("                    <div style=\"color:#555; font-size:13px; margin:2px 0 0 16px;\">"
+                                + escapeHtml(bio) + "</div>");
+                    }
                     writer.println("                </div>");
                 }
                 writer.println("            </details>");
@@ -474,6 +492,29 @@ public class GedcomFamilyAnalyzer {
             }
         }
         writer.println("        </div>");
+    }
+
+    /** Person id -> bare Geni guid, or null if it isn't one (e.g. a "private-…" stub). */
+    private String guidOf(Person p) {
+        String id = p.getId();
+        if (id == null) {
+            return null;
+        }
+        String g = id.startsWith("I") ? id.substring(1) : id;
+        return g.matches("\\d{10,}") ? g : null;
+    }
+
+    /**
+     * Public Geni profile URL for a guid. Kept in one place so the link format is a
+     * one-line fix if it ever changes — the annotation file stores only the guid.
+     */
+    private String geniProfileUrl(String guid) {
+        return "https://www.geni.com/people/x/" + guid;
+    }
+
+    private String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     /** Section heading for an ancestor generation (e.g. 1 -> "Parents", 12 -> "Great 10 Grandparents"). */

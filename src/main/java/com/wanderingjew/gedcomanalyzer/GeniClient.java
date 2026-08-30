@@ -128,7 +128,7 @@ public class GeniClient {
         }
 
         try {
-            String body = get("profile-" + profileId + "/immediate-family");
+            String body = get("profile-" + profileId + "/immediate-family", PROFILE_FIELDS);
             // Cache the raw JSON so subsequent runs skip the network entirely.
             Files.write(cacheFile, body.getBytes(StandardCharsets.UTF_8));
             return mapper.readTree(body);
@@ -139,10 +139,19 @@ public class GeniClient {
         }
     }
 
-    private String get(String apiPath) throws IOException, InterruptedException {
+    /**
+     * Fetch a single profile with an explicit field list (no caching in the immediate-family
+     * v3 cache — used for one-off enrichment like about_me). Throws GeniAccessDeniedException
+     * on a 403 so the caller can skip a privacy-restricted profile.
+     */
+    public JsonNode fetchProfile(String profileId, String fields) throws IOException, InterruptedException {
+        return mapper.readTree(get("profile-" + profileId, fields));
+    }
+
+    private String get(String apiPath, String fields) throws IOException, InterruptedException {
         String url = API_BASE + apiPath
                 + "?access_token=" + URLEncoder.encode(accessToken, StandardCharsets.UTF_8)
-                + "&fields=" + URLEncoder.encode(PROFILE_FIELDS, StandardCharsets.UTF_8);
+                + "&fields=" + URLEncoder.encode(fields, StandardCharsets.UTF_8);
 
         int attempt = 0;
         while (true) {

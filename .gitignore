@@ -51,3 +51,9 @@ geni-cache*
 
 # Local symlink to the output-reports folder on Drive (machine-specific)
 /output
+
+# Notable-ancestor annotation file (guid-keyed; reveals family structure — keep local)
+notable-ancestors.tsv
+
+# Claude Code local tool state
+.claude/

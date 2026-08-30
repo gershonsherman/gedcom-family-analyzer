@@ -126,7 +126,27 @@ Main analyzer:
   (collapsed by default; all shown, not capped — so deep notables like Rashi still appear),
   plus the deepest documented lines (endpoints by longest path, placeholder/spouse/"(No
   Name)" endpoints filtered out). Display-only — computed at report time, nothing stored.
-  `looksNotable()` (the title/dynasty regex) lives here now.
+  `looksNotable()` (the title/dynasty regex) lives here now. The notable set is now
+  `looksNotable(name) OR NotableAnnotations.isNotable(guid)` — the second half catches
+  title-less notables (e.g. the Abarbanel) via the research pass below; flagged entries render
+  a one-line bio + a `[Geni]` link (`geniProfileUrl(guid)` = `/people/x/<guid>`; Geni is a JS
+  SPA so this can't be server-verified, but it's the standard resolve-by-id deep link and a
+  one-line fix since only the guid is stored). `allAncestors()` exposes the full ancestor set.
+- `NotableAnnotations` + `FetchNotableAbout` — the **research pass** enriching the above
+  (shipped + validated live 2026-08-30 on Mark's ~1,192 ancestors). `FetchNotableAbout
+  <gedcom-dir> <person-id> [ann-file]` (ONLINE, needs token) walks every ancestor, fetches its
+  Geni `about_me`, and records — in the shared, guid-keyed, git-ignored `notable-ancestors.tsv`
+  (`guid<TAB>proseLen<TAB>encLinks<TAB>bio`) — the count of **encyclopedia citations**
+  (Wikipedia/Jewish Encyclopedia/Wikidata/Britannica) and the first **prose-like** sentence
+  (verbatim, no summarization). `isNotable(guid)` = `encLinks>=1`. **Key finding:** about_me
+  *presence* is a poor notability signal (most ancestors have one, and long ones are usually
+  genealogical data dumps or personal notes — e.g. "swam across the Vistula"); **encyclopedia
+  citations** are the high-precision signal that separates the Abarbanel from ordinary
+  relatives (~11% flagged vs. ~60% by length). Incremental (skips guids already recorded);
+  `NOTABLE_FETCH_LIMIT=N` caps a test slice. Uses `GeniClient.fetchProfile(id,fields)` — a
+  single-profile GET that does NOT touch the v3 immediate-family cache (so responses aren't
+  cached: a schema change means a full ~6-min refetch). One shared file across all trees
+  (guid is universal), and it's hand-editable to polish marquee bios.
 - `LineageEndpoints <gedcom-dir> <person-id>` — EXPLORATORY, offline, standalone `main`,
   NOT wired into the report (that's `LineageAnalysis` now). Kept for its richer path-count
   analysis (ahnentafel line counts, multiplicity ranking) used while designing the feature.
@@ -270,10 +290,11 @@ it in git:
 
 ## Open / possible next steps
 
-- **SHIPPED v1 (2026-08-30): "Notable Ancestral Lines" report appendix** (see
+- **SHIPPED (2026-08-30): "Notable Ancestral Lines" report appendix** (see
   `LineageAnalysis` in Architecture). Labels documented/notable ancestors at the end of the
-  ANCESTORS section. v1 uses the **title-in-name auto-flag only** (no per-person research):
-  on Mark's tree that flags 445 of ~1,193 distinct ancestors — a substantial documented
+  ANCESTORS section. v1 shipped the **title-in-name auto-flag** and v2 (same day) added the
+  **encyclopedia-citation research pass** below (notable = title OR encyclopedia-cited):
+  on Mark's tree the title flag alone catches 445 of ~1,193 distinct ancestors — a substantial documented
   rabbinic genealogy (Katzenellenbogen, Horowitz, Spira, Isserles/"Rama", Loew/"Maharal",
   Luria, Weil, Auerbach…) — and the deepest line runs 102 generations to Zerubbabel (3rd
   Exilarch, ~500s BCE, matching Mark's "back to 600 BCE"). Rendered as layout **C**: notable
@@ -282,15 +303,21 @@ it in git:
   deepest-lines list (top 15, placeholder/spouse endpoints filtered). Per-person-once (not
   "famous people under each line") because pedigree collapse puts the same person on dozens
   of lines.
-  - **DEFERRED — research vs. auto-flag:** individually verifying notables (vs. trusting the
-    title flag) is deferred; v1 is auto-flag only. A design-time batch of web searches on
-    ~20 top endpoints confirmed nearly all as genuine (Kalonymus dynasty of Mainz; Rashi's
-    family/students — Rashbam, RIBaN, Ri HaZaken, Ri Bekhor Shor), so the flag is a
-    trustworthy first pass.
-  - **DECIDED — where research would live (if/when done):** a separate **guid-keyed
-    annotation file** (`place-overrides.tsv`-style: guid → title/description/source link),
-    NOT the GEDCOM, since both fetched and re-exported `.ged` files get overwritten. Merge it
-    at report time. Not built yet (nothing to store while v1 is auto-flag-only).
+  - **SHIPPED v2 (2026-08-30): the research pass.** No longer auto-flag-only — see
+    `NotableAnnotations` + `FetchNotableAbout` in Architecture. Fetches every ancestor's Geni
+    `about_me`, flags notability by **encyclopedia citations** (not about_me length — length
+    over-flags on data dumps), and shows a verbatim prose bio + `[Geni]` link. Validated live
+    on Mark's tree: 1,181 fetched, 132 encyclopedia-flagged, lifting the notable set 445 → 530
+    (the added ~85 are title-less: Katzenellenbogen, Auerbach, Abarbanel…). Stored in the
+    shared guid-keyed `notable-ancestors.tsv` (git-ignored), merged at report time — NOT the
+    GEDCOM, since both fetched and re-exported `.ged` files get overwritten. Hand-editable to
+    polish individual bios (a few auto-extracted ones grab a citation/book title).
+  - A design-time batch of web searches on ~20 top endpoints confirmed nearly all as genuine
+    (Kalonymus dynasty of Mainz; Rashi's family/students — Rashbam, RIBaN, Ri HaZaken, Ri
+    Bekhor Shor), so even the title flag is a trustworthy first pass.
+  - **Still possible (deferred):** individual human/Claude verification of borderline names,
+    and a curated "most notable" highlight — but the encyclopedia-citation signal already
+    gives a high-precision automatic pass, so this is low priority.
 - **Cousin/descendant fetcher — DONE, confirmed working.** `GeniAncestorFetcher.
   fetchWithDescendants` + `GeniCousinFetch`/`BuildCousinGedcom` (see Architecture above),
   plus the ancestor/descendant/cousin maps, the current-residence field, and "Private"

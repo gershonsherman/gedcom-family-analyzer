@@ -36,7 +36,8 @@ public class LineageAnalysis {
             "\\b(Exilarch|Gaon|Nasi|Rashi|Rambam|Rabbi|Rav|King|Prince|Kohen|Cohen Gadol|"
             + "ha-Levi|HaLevi|Patriarch|Sage|Rebbe|Tzaddik|Priest|HaGadol|Hagadol|"
             + "Kalonymus|Kalonymos|Klonymus|Treves|Tosafot|Tosafos|Tossafot|HaSandlar|"
-            + "Hasandlar|Metivta|Metibta|Resh)\\b", Pattern.CASE_INSENSITIVE);
+            + "Hasandlar|Metivta|Metibta|Resh|Abarbanel|Abravanel|Abrabanel|Maharal|"
+            + "Maharam|Maharshal|Katzenellenbogen)\\b", Pattern.CASE_INSENSITIVE);
 
     /** True if a free-text name looks like it carries a title/office/known dynasty. */
     public static boolean looksNotable(String name) {
@@ -80,6 +81,11 @@ public class LineageAnalysis {
                 }
             }
         }
+    }
+
+    /** All distinct ancestors of the target (excluding the target). */
+    public java.util.Collection<Person> allAncestors() {
+        return ancestorsById.values();
     }
 
     /** Distinct ancestors (excluding the target) whose name looks notable. */
