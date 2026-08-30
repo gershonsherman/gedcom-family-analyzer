@@ -121,8 +121,9 @@ Main analyzer:
   filename.
 - `LineageAnalysis` — the report-wired lineage computation (instance-based, built from a
   target's `getParents()` graph, no GedcomData handle). Powers the **"Notable Ancestral
-  Lines"** appendix at the end of the ANCESTORS section: a capped list of distinct
-  title-flagged ancestors (each once, closest relationship first, "…and N more" past 50)
+  Lines"** appendix at the end of the ANCESTORS section: distinct title-flagged ancestors
+  (each once) in collapsible `<details>` accordions bucketed by 10-great-grandparent range
+  (collapsed by default; all shown, not capped — so deep notables like Rashi still appear),
   plus the deepest documented lines (endpoints by longest path, placeholder/spouse/"(No
   Name)" endpoints filtered out). Display-only — computed at report time, nothing stored.
   `looksNotable()` (the title/dynasty regex) lives here now.
@@ -275,11 +276,12 @@ it in git:
   on Mark's tree that flags 445 of ~1,193 distinct ancestors — a substantial documented
   rabbinic genealogy (Katzenellenbogen, Horowitz, Spira, Isserles/"Rama", Loew/"Maharal",
   Luria, Weil, Auerbach…) — and the deepest line runs 102 generations to Zerubbabel (3rd
-  Exilarch, ~500s BCE, matching Mark's "back to 600 BCE"). Rendered as layout **C**: a flat
-  notable-ancestors list (capped at 50, closest first, "…and N more") + a deepest-lines list
-  (top 15, placeholder/spouse endpoints filtered). Chose the flat list over "famous people
-  under each line" because pedigree collapse puts the same person (e.g. Rashi) on dozens of
-  lines — flat shows each once.
+  Exilarch, ~500s BCE, matching Mark's "back to 600 BCE"). Rendered as layout **C**: notable
+  ancestors in collapsible generation-bucket accordions (`<details>`, by 10-great-grandparent
+  range, click to expand — all shown, not capped, so Rashi at ~24th ggp appears) + a
+  deepest-lines list (top 15, placeholder/spouse endpoints filtered). Per-person-once (not
+  "famous people under each line") because pedigree collapse puts the same person on dozens
+  of lines.
   - **DEFERRED — research vs. auto-flag:** individually verifying notables (vs. trusting the
     title flag) is deferred; v1 is auto-flag only. A design-time batch of web searches on
     ~20 top endpoints confirmed nearly all as genuine (Kalonymus dynasty of Mainz; Rashi's

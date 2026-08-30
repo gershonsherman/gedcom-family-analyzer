@@ -434,26 +434,33 @@ public class GedcomFamilyAnalyzer {
         writer.println("            <p style=\"color:#7f8c8d; font-style:italic;\">Auto-detected from titles / known families in the names — a starting point, not individually verified.</p>");
 
         if (!notable.isEmpty()) {
-            int cap = 50;
-            int shown = Math.min(cap, notable.size());
-            String header = notable.size() > cap
-                    ? "Notable ancestors (showing " + shown + " of " + notable.size() + ", closest first):"
-                    : "Notable ancestors (" + notable.size() + "):";
-            writer.println("            <strong style=\"color:#8e44ad; font-size:16px;\">" + header + "</strong>");
-            for (int i = 0; i < shown; i++) {
-                Person p = notable.get(i);
+            writer.println("            <strong style=\"color:#8e44ad; font-size:16px;\">Notable ancestors (" + notable.size() + "):</strong>");
+            writer.println("            <p style=\"color:#7f8c8d; font-style:italic; margin:2px 0 8px;\">Grouped by how far back — click a heading to expand.</p>");
+
+            // Bucket by 10-great-grandparent ranges (notable is already closest-first).
+            LinkedHashMap<Integer, List<Person>> buckets = new LinkedHashMap<>();
+            for (Person p : notable) {
                 int gen = closestGen.apply(p);
-                String rel = (gen == Integer.MAX_VALUE) ? "" : " — " + ancestorGenLabelSingular(gen);
-                String dates = p.getLifeDates();
-                writer.println("            <div class=\"person\">");
-                writer.println("                <span class=\"person-name\">" + p.getDisplayName() + "</span>"
-                        + "<span class=\"cross-ref\">" + rel + "</span>"
-                        + (dates.isEmpty() ? "" : " <span class=\"life-dates\">(" + dates + ")</span>"));
-                writer.println("            </div>");
+                int ggp = (gen == Integer.MAX_VALUE) ? 1 : gen - 2; // 1st great-grandparent = gen 3
+                int bucket = ggp <= 0 ? 1 : ((ggp - 1) / 10) + 1;
+                buckets.computeIfAbsent(bucket, k -> new ArrayList<>()).add(p);
             }
-            if (notable.size() > cap) {
-                writer.println("            <div class=\"person\" style=\"color:#7f8c8d; font-style:italic;\">…and "
-                        + (notable.size() - cap) + " more.</div>");
+            for (Map.Entry<Integer, List<Person>> b : buckets.entrySet()) {
+                List<Person> people = b.getValue();
+                writer.println("            <details>");
+                writer.println("                <summary style=\"cursor:pointer; font-weight:bold; color:#2980b9; padding:4px 0;\">"
+                        + greatGrandBucketLabel(b.getKey()) + " (" + people.size() + ")</summary>");
+                for (Person p : people) {
+                    int gen = closestGen.apply(p);
+                    String rel = (gen == Integer.MAX_VALUE) ? "" : " — " + ancestorGenLabelSingular(gen);
+                    String dates = p.getLifeDates();
+                    writer.println("                <div class=\"person\">");
+                    writer.println("                    <span class=\"person-name\">" + p.getDisplayName() + "</span>"
+                            + "<span class=\"cross-ref\">" + rel + "</span>"
+                            + (dates.isEmpty() ? "" : " <span class=\"life-dates\">(" + dates + ")</span>"));
+                    writer.println("                </div>");
+                }
+                writer.println("            </details>");
             }
         }
 
@@ -481,6 +488,16 @@ public class GedcomFamilyAnalyzer {
         if (gen == 1) return "parent";
         if (gen == 2) return "grandparent";
         return ordinal(gen - 2) + " great-grandparent";
+    }
+
+    /** Accordion heading for a 10-great-grandparent bucket (1 -> "Up to 10th …", 3 -> "21st–30th …"). */
+    private String greatGrandBucketLabel(int bucket) {
+        int endGgp = bucket * 10;
+        if (bucket == 1) {
+            return "Up to " + ordinal(endGgp) + " Great-Grandparents";
+        }
+        int startGgp = (bucket - 1) * 10 + 1;
+        return ordinal(startGgp) + "–" + ordinal(endGgp) + " Great-Grandparents";
     }
 
     /**
