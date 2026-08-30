@@ -119,10 +119,16 @@ Main analyzer:
   files are keyed by Geni's short internal `id`, not the long public guid — to find a
   specific file, `grep -rl '"guid":"<guid>"'` the cache dir rather than guessing the
   filename.
-- `LineageEndpoints <gedcom-dir> <person-id>` — EXPLORATORY, offline (reads the GEDCOM
-  directory directly, no Geni API), not yet wired into the main report. Prototype for the
-  "label ancestors by documented lineage" feature — see its own javadoc and "Open /
-  possible next steps" below for what it computes and the open design question.
+- `LineageAnalysis` — the report-wired lineage computation (instance-based, built from a
+  target's `getParents()` graph, no GedcomData handle). Powers the **"Notable Ancestral
+  Lines"** appendix at the end of the ANCESTORS section: a capped list of distinct
+  title-flagged ancestors (each once, closest relationship first, "…and N more" past 50)
+  plus the deepest documented lines (endpoints by longest path, placeholder/spouse/"(No
+  Name)" endpoints filtered out). Display-only — computed at report time, nothing stored.
+  `looksNotable()` (the title/dynasty regex) lives here now.
+- `LineageEndpoints <gedcom-dir> <person-id>` — EXPLORATORY, offline, standalone `main`,
+  NOT wired into the report (that's `LineageAnalysis` now). Kept for its richer path-count
+  analysis (ahnentafel line counts, multiplicity ranking) used while designing the feature.
 - `PlaceOverrides` + `place-overrides.tsv` — manual coordinate corrections for places Geni
   geocoded wrongly (e.g. "Babylon" → Babylon NY). We do NOT geocode; all coords are Geni's.
 
@@ -263,35 +269,26 @@ it in git:
 
 ## Open / possible next steps
 
-- **IN PROGRESS: label ancestors by documented lineage** (started 2026-08-26). Mark wants
-  notable/documented ancestors (e.g. the Exilarch line, Rashi's family) annotated in the
-  report, not just shown as bare names. `LineageEndpoints` (new, exploratory/not yet
-  wired into the report — see its own javadoc for full findings) computes, for a given
-  person: the count of distinct ahnentafel "lines" (root-to-leaf paths through the
-  ancestor binary tree, NOT deduped across pedigree-collapse paths the way
-  `getAncestorsByGeneration` is), ranks distinct endpoint ancestors by how many lines
-  terminate at each (a "worth checking first" proxy, not notability itself), and
-  auto-flags likely-titled names by regex (no separate title field exists — any signal
-  is embedded in the free-text name). Real run against Mark's tree: 64,540 lines / 312
-  distinct endpoints (the longest reaching 102 generations back, an unbroken Exilarch
-  succession to Zerubbabel, ~500s BCE — matches Mark's "back to 600 BCE"). Expanding
-  scope to "any ancestor anywhere in the tree" (not just the 312 endpoints, since a
-  notable figure like Rashi can be a mid-line waypoint whose own ancestry continues
-  further back) found 1,193 total distinct ancestors, 445 of them (37%!) auto-flagged —
-  this tree contains a substantial documented rabbinic genealogy (~1300s-1700s
-  Poland/Germany: Katzenellenbogen, Horowitz, Spira, Isserles/"Rama", Loew/"Maharal",
-  Luria, Weil, Auerbach, among others), not just a handful of isolated notable people. A
-  batch of real web searches against the ~20 top-multiplicity endpoints confirmed nearly
-  all as genuine historical figures (Kalonymus dynasty of Mainz; Rashi's own
-  family/students — Rashbam, RIBaN, Ri HaZaken, Ri Bekhor Shor; the Abin/Abun family) —
-  only one name came back inconclusive. **Unresolved open question, pick up here first:**
-  given how many of the 445 already carry an obvious title in their own name text, is
-  that self-evident enough to label without individual web research (saving actual
-  research effort for genuinely ambiguous names, like the original top-20 batch before
-  we knew who "Shimon, of Le Mans" was)? Mark signed off before answering. Also still
-  undecided: where the resulting labels/notes should live (a new field on `Person`? a
-  `place-overrides.tsv`-style annotation file? report-display-only, not fed back into the
-  GEDCOM?) and how they'd render in the HTML report.
+- **SHIPPED v1 (2026-08-30): "Notable Ancestral Lines" report appendix** (see
+  `LineageAnalysis` in Architecture). Labels documented/notable ancestors at the end of the
+  ANCESTORS section. v1 uses the **title-in-name auto-flag only** (no per-person research):
+  on Mark's tree that flags 445 of ~1,193 distinct ancestors — a substantial documented
+  rabbinic genealogy (Katzenellenbogen, Horowitz, Spira, Isserles/"Rama", Loew/"Maharal",
+  Luria, Weil, Auerbach…) — and the deepest line runs 102 generations to Zerubbabel (3rd
+  Exilarch, ~500s BCE, matching Mark's "back to 600 BCE"). Rendered as layout **C**: a flat
+  notable-ancestors list (capped at 50, closest first, "…and N more") + a deepest-lines list
+  (top 15, placeholder/spouse endpoints filtered). Chose the flat list over "famous people
+  under each line" because pedigree collapse puts the same person (e.g. Rashi) on dozens of
+  lines — flat shows each once.
+  - **DEFERRED — research vs. auto-flag:** individually verifying notables (vs. trusting the
+    title flag) is deferred; v1 is auto-flag only. A design-time batch of web searches on
+    ~20 top endpoints confirmed nearly all as genuine (Kalonymus dynasty of Mainz; Rashi's
+    family/students — Rashbam, RIBaN, Ri HaZaken, Ri Bekhor Shor), so the flag is a
+    trustworthy first pass.
+  - **DECIDED — where research would live (if/when done):** a separate **guid-keyed
+    annotation file** (`place-overrides.tsv`-style: guid → title/description/source link),
+    NOT the GEDCOM, since both fetched and re-exported `.ged` files get overwritten. Merge it
+    at report time. Not built yet (nothing to store while v1 is auto-flag-only).
 - **Cousin/descendant fetcher — DONE, confirmed working.** `GeniAncestorFetcher.
   fetchWithDescendants` + `GeniCousinFetch`/`BuildCousinGedcom` (see Architecture above),
   plus the ancestor/descendant/cousin maps, the current-residence field, and "Private"

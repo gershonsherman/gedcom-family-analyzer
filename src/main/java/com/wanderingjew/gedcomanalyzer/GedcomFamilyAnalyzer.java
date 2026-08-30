@@ -400,7 +400,73 @@ public class GedcomFamilyAnalyzer {
                 }
                 writer.println("        </div>");
             }
+
+            writeNotableLineages(targetPerson, personGens, writer);
         }
+    }
+
+    /**
+     * Appendix to the ANCESTORS section: distinct notable ancestors (each once, closest
+     * relationship first) plus the deepest documented lines. Auto-detected from titles in
+     * the names — display-only, computed here, not stored.
+     */
+    private void writeNotableLineages(Person targetPerson,
+                                      Map<String, java.util.TreeSet<Integer>> personGens,
+                                      PrintWriter writer) {
+        LineageAnalysis lineage = new LineageAnalysis(targetPerson);
+        List<Person> notable = lineage.notableAncestors();
+        List<LineageAnalysis.Line> deepest = lineage.deepestLines(15);
+        if (notable.isEmpty() && deepest.isEmpty()) {
+            return;
+        }
+
+        java.util.function.Function<Person, Integer> closestGen = p -> {
+            java.util.TreeSet<Integer> gens = personGens.get(p.getId());
+            return (gens == null || gens.isEmpty()) ? Integer.MAX_VALUE : gens.first();
+        };
+        notable.sort((a, b) -> {
+            int cmp = Integer.compare(closestGen.apply(a), closestGen.apply(b));
+            return cmp != 0 ? cmp : a.getDisplayName().compareToIgnoreCase(b.getDisplayName());
+        });
+
+        writer.println("        <div class=\"generation\">");
+        writer.println("            <h3>Notable Ancestral Lines</h3>");
+        writer.println("            <p style=\"color:#7f8c8d; font-style:italic;\">Auto-detected from titles / known families in the names — a starting point, not individually verified.</p>");
+
+        if (!notable.isEmpty()) {
+            int cap = 50;
+            int shown = Math.min(cap, notable.size());
+            String header = notable.size() > cap
+                    ? "Notable ancestors (showing " + shown + " of " + notable.size() + ", closest first):"
+                    : "Notable ancestors (" + notable.size() + "):";
+            writer.println("            <strong style=\"color:#8e44ad; font-size:16px;\">" + header + "</strong>");
+            for (int i = 0; i < shown; i++) {
+                Person p = notable.get(i);
+                int gen = closestGen.apply(p);
+                String rel = (gen == Integer.MAX_VALUE) ? "" : " — " + ancestorGenLabelSingular(gen);
+                String dates = p.getLifeDates();
+                writer.println("            <div class=\"person\">");
+                writer.println("                <span class=\"person-name\">" + p.getDisplayName() + "</span>"
+                        + "<span class=\"cross-ref\">" + rel + "</span>"
+                        + (dates.isEmpty() ? "" : " <span class=\"life-dates\">(" + dates + ")</span>"));
+                writer.println("            </div>");
+            }
+            if (notable.size() > cap) {
+                writer.println("            <div class=\"person\" style=\"color:#7f8c8d; font-style:italic;\">…and "
+                        + (notable.size() - cap) + " more.</div>");
+            }
+        }
+
+        if (!deepest.isEmpty()) {
+            writer.println("            <strong style=\"color:#8e44ad; font-size:16px;\">Deepest documented lines:</strong>");
+            for (LineageAnalysis.Line line : deepest) {
+                writer.println("            <div class=\"person\">");
+                writer.println("                &rarr; <span class=\"person-name\">" + line.endpoint.getDisplayName() + "</span>"
+                        + " <span class=\"cross-ref\">— " + line.generations + " generations back</span>");
+                writer.println("            </div>");
+            }
+        }
+        writer.println("        </div>");
     }
 
     /** Section heading for an ancestor generation (e.g. 1 -> "Parents", 12 -> "Great 10 Grandparents"). */
