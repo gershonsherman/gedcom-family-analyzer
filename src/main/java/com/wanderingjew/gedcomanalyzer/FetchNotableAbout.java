@@ -101,7 +101,7 @@ public class FetchNotableAbout {
                 int encLinks = about == null ? 0 : countEncyclopediaLinks(about);
                 String prose = about == null ? "" : clean(about);
                 String bio = firstProseSentence(prose);
-                ann.append(guid, prose.length(), encLinks, bio);
+                ann.append(guid, prose.length(), encLinks, p.getDisplayName(), bio);
                 checked++;
                 if (encLinks >= 1) {
                     notable++;
@@ -111,7 +111,7 @@ public class FetchNotableAbout {
                             + denied + " denied)");
                 }
             } catch (GeniAccessDeniedException e) {
-                ann.append(guid, 0, 0, "");     // record the denial so we don't retry it
+                ann.append(guid, 0, 0, p.getDisplayName(), "");  // record the denial so we don't retry it
                 denied++;
             } catch (IOException e) {
                 // 401 (bad/expired token) or a fatal error — stop; progress so far is saved.
@@ -134,7 +134,11 @@ public class FetchNotableAbout {
             return null;
         }
         String g = id.startsWith("I") ? id.substring(1) : id;
-        return g.matches("\\d{10,}") ? g : null;
+        // 6+ digits to match GedcomFamilyAnalyzer.guidOf: also covers the shorter numeric
+        // internal ids some older profiles carry. (fetchProfile below prepends "g", which
+        // resolves long guids; a short internal id may not, so such a fetch can no-op — but
+        // that is no worse than the old threshold, which skipped these people entirely.)
+        return g.matches("\\d{6,}") ? g : null;
     }
 
     /** about_me from a direct-profile response (top level), falling back to a focus wrapper. */

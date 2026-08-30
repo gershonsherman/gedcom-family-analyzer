@@ -126,17 +126,30 @@ Main analyzer:
   (collapsed by default; all shown, not capped — so deep notables like Rashi still appear),
   plus the deepest documented lines (endpoints by longest path, placeholder/spouse/"(No
   Name)" endpoints filtered out). Display-only — computed at report time, nothing stored.
-  `looksNotable()` (the title/dynasty regex) lives here now. The notable set is now
-  `looksNotable(name) OR NotableAnnotations.isNotable(guid)` — the second half catches
-  title-less notables (e.g. the Abarbanel) via the research pass below; flagged entries render
-  a one-line bio + a `[Geni]` link (`geniProfileUrl(guid)` = `/people/x/<guid>`; Geni is a JS
-  SPA so this can't be server-verified, but it's the standard resolve-by-id deep link and a
-  one-line fix since only the guid is stored). `allAncestors()` exposes the full ancestor set.
+  `looksNotable()` (the title/dynasty regex) lives here now. The notable set is
+  `looksNotable(name) OR NotableAnnotations.isNotable(guid) OR NotableAnnotations.isFamous(guid)`
+  — the middle catches title-less notables (e.g. the Abarbanel) via the research pass below;
+  the last is the hand-curated **marquee** flag. Flagged entries render a one-line bio + a
+  `[Geni]` link (`geniProfileUrl(guid)` = `/people/x/<guid>`; Geni is a JS SPA so this can't be
+  server-verified, but it's the standard resolve-by-id deep link and a one-line fix since only
+  the guid is stored). `allAncestors()` exposes the full ancestor set.
+  - **Marquee "Including:" preview.** Under each generation-bucket accordion heading, an
+    always-visible "Including:" block lists that bucket's **famous** ancestors (name + relationship
+    only), so the standout names show without expanding the accordion (full dates/[Geni]/bio stay
+    inside). Famous = the hand-set `famous` column of `notable-ancestors.tsv` (see below); the four
+    seed names (Heschel, Maharshal, Abarbanel, Rashi) were just examples — **mark anyone famous
+    by editing the tsv**. `guidOf()` (report) and `toGuid()` (`FetchNotableAbout`) match `\d{6,}`
+    now, not `\d{10,}` — so shorter numeric Geni ids (e.g. Abraham Joshua Heschel = `3381491`) get
+    a guid, a `[Geni]` link, and annotation lookups instead of being silently dropped.
 - `NotableAnnotations` + `FetchNotableAbout` — the **research pass** enriching the above
   (shipped + validated live 2026-08-30 on Mark's ~1,192 ancestors). `FetchNotableAbout
   <gedcom-dir> <person-id> [ann-file]` (ONLINE, needs token) walks every ancestor, fetches its
   Geni `about_me`, and records — in the shared, guid-keyed, git-ignored `notable-ancestors.tsv`
-  (`guid<TAB>proseLen<TAB>encLinks<TAB>bio`) — the count of **encyclopedia citations**
+  (`guid<TAB>proseLen<TAB>encLinks<TAB>famous<TAB>name<TAB>bio`; the `famous` flag and a
+  human-readable `name` sit before the long free-text `bio` so the file reads at a glance —
+  `famous` is **hand-curated only** (research pass writes `0`, every row an explicit `0`/`1`), and
+  `name` is a display-name eyeballing aid NOT read back by the report, so a stale one is harmless)
+  — the count of **encyclopedia citations**
   (Wikipedia/Jewish Encyclopedia/Wikidata/Britannica) and the first **prose-like** sentence
   (verbatim, no summarization). `isNotable(guid)` = `encLinks>=1`. **Key finding:** about_me
   *presence* is a poor notability signal (most ancestors have one, and long ones are usually
@@ -146,7 +159,14 @@ Main analyzer:
   `NOTABLE_FETCH_LIMIT=N` caps a test slice. Uses `GeniClient.fetchProfile(id,fields)` — a
   single-profile GET that does NOT touch the v3 immediate-family cache (so responses aren't
   cached: a schema change means a full ~6-min refetch). One shared file across all trees
-  (guid is universal), and it's hand-editable to polish marquee bios.
+  (guid is universal), and it's hand-editable to polish marquee bios **and to set the `famous`
+  flag**. To mark someone famous: find them in the report's Notable accordions, copy the guid out
+  of their `[Geni]` link (`/people/x/<guid>`), then in `notable-ancestors.tsv` flip the `famous`
+  column (4th, before `bio`) from `0` to `1` on that guid's row (or add a row
+  `<guid>\t0\t0\t1\t<name>\t<optional bio>` if none exists — an empty-bio famous row still renders
+  name+relationship in the preview), and regenerate the report. `isFamous(guid)` = `famous`
+  column is `1`/`true`/`yes`. The `name` column (backfilled from the GEDCOMs for existing rows,
+  written from the Geni/display name for new ones) makes it easy to find the right guid by eye.
 - `LineageEndpoints <gedcom-dir> <person-id>` — EXPLORATORY, offline, standalone `main`,
   NOT wired into the report (that's `LineageAnalysis` now). Kept for its richer path-count
   analysis (ahnentafel line counts, multiplicity ranking) used while designing the feature.
@@ -214,6 +234,13 @@ Main analyzer:
   so reports match Geni's on-site names. Hand-exports (no `_GENINAME`) use constructed names.
 - **Coordinate NPE gotcha:** never mix a primitive and a nullable `Double` in a ternary
   (autounboxing NPEs on null). Use if/else.
+- **Bidi/RTL rendering gotcha:** a display name ending in Hebrew (RTL, e.g. Rashi = "RASHI -
+  רש״י") followed on the same line by neutral punctuation + a number ("— 24th …") gets those
+  pulled into the RTL run and visually reordered. Fixed once, globally, with `unicode-bidi:
+  isolate` on the `.person-name` CSS class (every name in the report renders through that span),
+  not per-string hacks. The Leaflet map popups render names via a different path
+  (`AncestorMapWriter`/`CousinMapWriter`) and would need the same isolation if the bleed shows
+  there.
 
 ## Findings that shaped the work
 

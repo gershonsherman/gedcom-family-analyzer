@@ -160,7 +160,12 @@ public class GedcomFamilyAnalyzer {
             writer.println("        h2 { color: #34495e; font-size: 24px; margin-top: 30px; margin-bottom: 15px; border-left: 4px solid #3498db; padding-left: 15px; }");
             writer.println("        h3 { color: #2980b9; font-size: 20px; margin-top: 20px; margin-bottom: 10px; }");
             writer.println("        .person { margin: 8px 0; padding: 5px 0; }");
-            writer.println("        .person-name { font-weight: bold; color: #2c3e50; }");
+            // isolate: keep a name's own text direction from bleeding into the surrounding
+            // line. Without it, a name ending in Hebrew (RTL, e.g. "RASHI - רש״י") pulls the
+            // neutral punctuation and the number that follow it ("— 24th …") into the RTL run,
+            // reordering them; isolating the span makes the outer LTR line treat it as one unit.
+            writer.println("        .person-name { font-weight: bold; color: #2c3e50;"
+                    + " unicode-bidi: isolate; }");
             writer.println("        .person-id { color: #7f8c8d; font-family: monospace; }");
             writer.println("        .dup-count { color: #c0392b; font-weight: bold; }");
             writer.println("        .cross-ref { color: #8e44ad; font-style: italic; font-size: 13px; }");
@@ -421,7 +426,9 @@ public class GedcomFamilyAnalyzer {
         // ordinary relatives whose about_me is just a one-line note.
         List<Person> notable = new ArrayList<>();
         for (Person p : lineage.allAncestors()) {
-            if (LineageAnalysis.looksNotable(p.getDisplayName()) || annotations.isNotable(guidOf(p))) {
+            String g = guidOf(p);
+            if (LineageAnalysis.looksNotable(p.getDisplayName()) || annotations.isNotable(g)
+                    || annotations.isFamous(g)) {
                 notable.add(p);
             }
         }
@@ -479,6 +486,28 @@ public class GedcomFamilyAnalyzer {
                     writer.println("                </div>");
                 }
                 writer.println("            </details>");
+
+                // Always-visible "Including:" preview of the marquee (hand-flagged famous)
+                // ancestors in this bucket, so the standout names show without expanding the
+                // accordion. The full detail (dates, [Geni], bio) stays inside the accordion above.
+                List<Person> famousHere = new ArrayList<>();
+                for (Person p : people) {
+                    if (annotations.isFamous(guidOf(p))) {
+                        famousHere.add(p);
+                    }
+                }
+                if (!famousHere.isEmpty()) {
+                    writer.println("            <div style=\"margin:2px 0 12px 16px;\">");
+                    writer.println("                <span style=\"color:#8e44ad; font-weight:bold; font-size:13px;\">Including:</span>");
+                    for (Person p : famousHere) {
+                        int gen = closestGen.apply(p);
+                        String rel = (gen == Integer.MAX_VALUE) ? "" : " — " + ancestorGenLabelSingular(gen);
+                        writer.println("                <div style=\"font-size:14px;\">"
+                                + "<span class=\"person-name\">" + p.getDisplayName() + "</span>"
+                                + "<span class=\"cross-ref\">" + rel + "</span></div>");
+                    }
+                    writer.println("            </div>");
+                }
             }
         }
 
@@ -501,7 +530,10 @@ public class GedcomFamilyAnalyzer {
             return null;
         }
         String g = id.startsWith("I") ? id.substring(1) : id;
-        return g.matches("\\d{10,}") ? g : null;
+        // 6+ digits: covers both long Geni guids and the shorter numeric internal ids some
+        // older profiles carry (e.g. Abraham Joshua Heschel = 3381491). Non-Geni ids (test
+        // "I1", "private-…" stubs) fall below this or aren't all-digits.
+        return g.matches("\\d{6,}") ? g : null;
     }
 
     /**
