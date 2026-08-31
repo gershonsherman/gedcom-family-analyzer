@@ -1,0 +1,6 @@
+# Ancestor "stop" list: Geni guids the ancestor fetcher will NOT ascend past.
+# The listed person is still fetched (a real ancestor), but their parents are not followed —
+# used to cut spurious cross-tree bridges in Geni's collaborative data where one wrong parent
+# link splices a Jewish line into the enormous medieval European-royalty tree.
+# Format: guid<TAB>note
+6000000024862267114	Juana Abravanel — her recorded parent "Gonzalo de Monroy" (Spanish Christian noble) is a spurious Geni link that bridges the Abarbanel/Abravanel line into European royalty. Cutting here removed 535 royals / ~2,170 profiles from Mark's fetch. (gen ~23 from Mark; the Abarbanel line above her is genuine, her "parents" are not.)

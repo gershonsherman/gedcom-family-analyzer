@@ -150,10 +150,17 @@ public class GeniAncestorFetcher {
                 parentIds.remove(numericId);
 
                 boolean reachedCap = maxGenerations > 0 && entry.generation >= maxGenerations;
-                if (data.childUnionId == null || parentIds.isEmpty() || reachedCap) {
+                // A stop-listed ancestor is a boundary: keep them, but don't follow their parents.
+                // Cuts spurious Geni cross-tree bridges (e.g. Abarbanel -> European royalty).
+                boolean stopHere = AncestorStops.get().isStop(data.guid);
+                if (stopHere) {
+                    System.out.println("  Stop: not ascending past " + data.name + " ("
+                            + data.guid + ") — flagged in ancestor-stops.tsv.");
+                }
+                if (data.childUnionId == null || parentIds.isEmpty() || reachedCap || stopHere) {
                     boundary.add(numericId);
                 }
-                if (!reachedCap) {
+                if (!reachedCap && !stopHere) {
                     for (String parentId : parentIds) {
                         if (!queued.contains(parentId) && !visited.contains(parentId)) {
                             queue.add(new QueueEntry(parentId, entry.generation + 1));

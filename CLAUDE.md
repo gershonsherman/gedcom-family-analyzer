@@ -190,6 +190,24 @@ Main analyzer:
   analysis (ahnentafel line counts, multiplicity ranking) used while designing the feature.
 - `PlaceOverrides` + `place-overrides.tsv` — manual coordinate corrections for places Geni
   geocoded wrongly (e.g. "Babylon" → Babylon NY). We do NOT geocode; all coords are Geni's.
+- `AncestorStops` + `ancestor-stops.tsv` — guids the fetcher will NOT ascend past (committed,
+  like `place-overrides.tsv`; format `guid<TAB>note`). `GeniAncestorFetcher.ascend()` treats a
+  stop-listed profile as a boundary — fetches the person, but doesn't follow their parents.
+  **Why:** Geni's collaborative tree has spurious cross-tree bridges where one wrong parent link
+  splices a Jewish line into the exhaustively-documented **medieval-European-royalty** tree,
+  flooding a deep fetch (`maxGenerations` large) with tens of thousands of non-ancestors. The
+  first real case (2026-08-31): **Juana Abravanel** (`6000000024862267114`, ~gen 23 from Mark)
+  was given "Gonzalo de Monroy" (a Spanish Christian noble) as a parent — the classic
+  **Abarbanel/Abravanel → Iberian-nobility** splice. A `maxGen=200` fetch ballooned to 3,193
+  profiles / 535 royals; stop-listing that one node dropped it to 1,020 with **zero** royals.
+  Applies to both online `GeniFetch` and offline `BuildGedcom` (both use `ascend`). **Diagnosis
+  tip:** the royal *names* (King/Duke/Count of …, de Bourgogne/Limoges/Narbonne) get obvious deep
+  (~gen 30+), but the entry *edge* is shallower — find it by tracing the parent graph from the
+  target up to the shallowest royal and watching for the Jewish→Christian name flip, or by
+  cutting a candidate node and re-counting reachable royals (should drop to ~0). **Verification
+  tip:** compare per-generation ancestor counts against a close relative's pre-contamination
+  report (e.g. a first cousin's) — the deep shared generations should match exactly; a royal
+  leak shows up as an explosion at depth.
 
 ## Geni API auth & limits
 
