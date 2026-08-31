@@ -173,6 +173,24 @@ public class GedcomFamilyAnalyzer {
             writer.println("        .section { margin-bottom: 30px; }");
             writer.println("        .info { background-color: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
             writer.println("        .generation { margin-bottom: 20px; }");
+            // Collapsible sections: each main heading is a <summary> styled like the old <h2>,
+            // each generation/degree a nested <summary> styled like the old <h3>. A rotating
+            // triangle replaces the default disclosure marker so it reads as intentional.
+            writer.println("        details.section { margin-bottom: 30px; }");
+            writer.println("        details.section > summary { list-style: none; cursor: pointer;"
+                    + " color: #34495e; font-size: 24px; font-weight: bold; margin-top: 30px;"
+                    + " margin-bottom: 15px; border-left: 4px solid #3498db; padding: 6px 0 6px 15px; }");
+            writer.println("        details.section > summary::-webkit-details-marker { display: none; }");
+            writer.println("        details.section > summary::before { content: '\\25B8'; color: #3498db;"
+                    + " display: inline-block; width: 0.9em; margin-left: -0.2em; transition: transform 0.15s; }");
+            writer.println("        details.section[open] > summary::before { transform: rotate(90deg); }");
+            writer.println("        details.gen { margin-bottom: 20px; }");
+            writer.println("        details.gen > summary { list-style: none; cursor: pointer;"
+                    + " color: #2980b9; font-size: 20px; font-weight: bold; margin-top: 20px; margin-bottom: 10px; }");
+            writer.println("        details.gen > summary::-webkit-details-marker { display: none; }");
+            writer.println("        details.gen > summary::before { content: '\\25B8'; color: #2980b9;"
+                    + " display: inline-block; width: 0.9em; margin-left: -0.2em; transition: transform 0.15s; }");
+            writer.println("        details.gen[open] > summary::before { transform: rotate(90deg); }");
             writer.println("    </style>");
             writer.println(AncestorMapWriter.leafletHead());
             writer.println("</head>");
@@ -191,47 +209,43 @@ public class GedcomFamilyAnalyzer {
             // Ancestor map (only rendered when the data carries coordinates)
             String mapHtml = buildAncestorMapHtml(analyzer, targetPerson);
             if (!mapHtml.isEmpty()) {
-                writer.println("    <div class=\"section\">");
-                writer.println("        <h2>ANCESTOR MAP</h2>");
+                openSection(writer, "ANCESTOR MAP", false);
                 writer.print(mapHtml);
-                writer.println("    </div>");
+                closeSection(writer);
             }
 
-            // Ancestors
-            writer.println("    <div class=\"section\">");
-            writeAncestorsHtml(analyzer, targetPerson, writer);
-            writer.println("    </div>");
-            
+            // Ancestors — returns each ancestor's generation set, reused by the notable section.
+            Map<String, java.util.TreeSet<Integer>> ancestorGens =
+                    writeAncestorsHtml(analyzer, targetPerson, writer);
+
+            // Notable Ancestral Lines — its own top-level section now (written only when non-empty).
+            writeNotableLineages(targetPerson, ancestorGens, writer);
+
             // Descendant map (only rendered when the data carries coordinates). Unlike the
             // ancestor map, this prefers current residence over death/birth location —
             // most descendants, especially recent generations, are still alive.
             String descendantMapHtml = buildDescendantMapHtml(analyzer, targetPerson);
             if (!descendantMapHtml.isEmpty()) {
-                writer.println("    <div class=\"section\">");
-                writer.println("        <h2>DESCENDANT MAP</h2>");
+                openSection(writer, "DESCENDANT MAP", false);
                 writer.print(descendantMapHtml);
-                writer.println("    </div>");
+                closeSection(writer);
             }
 
-            // Descendants
-            writer.println("    <div class=\"section\">");
+            // Descendants (writes its own collapsible section)
             writeDescendantsHtml(analyzer, targetPerson, writer, gedcomData);
-            writer.println("    </div>");
-            
+
             // Siblings
-            writer.println("    <div class=\"section\">");
-            writer.println("        <h2>SIBLINGS</h2>");
+            openSection(writer, "SIBLINGS", false);
             writeSiblingsHtml(analyzer, targetPerson, writer);
-            writer.println("    </div>");
+            closeSection(writer);
 
             // Cousin map (siblings + 1st-5th cousins, coloured by degree; only rendered
             // when the data carries coordinates). Also written as a standalone file.
             List<GeniAncestorFetcher.MapPoint> cousinPoints = buildCousinMapPoints(analyzer, targetPerson);
             if (!cousinPoints.isEmpty()) {
-                writer.println("    <div class=\"section\">");
-                writer.println("        <h2>COUSIN MAP</h2>");
+                openSection(writer, "COUSIN MAP", false);
                 writer.print(new CousinMapWriter().mapSection(cousinPoints, "cousin-map", "500px"));
-                writer.println("    </div>");
+                closeSection(writer);
 
                 String cousinMapPath = cousinMapOutputPath(htmlOutputFile);
                 ensureOutputDirectoryExists(cousinMapPath);
@@ -240,10 +254,8 @@ public class GedcomFamilyAnalyzer {
                 System.out.println("Cousin map written to: " + cousinMapPath);
             }
 
-            // Cousins
-            writer.println("    <div class=\"section\">");
+            // Cousins (writes its own collapsible section)
             writeCousinsHtml(analyzer, targetPerson, writer, gedcomData);
-            writer.println("    </div>");
             
             writer.println("</body>");
             writer.println("</html>");
@@ -360,60 +372,89 @@ public class GedcomFamilyAnalyzer {
         return htmlOutputFile + "-cousins-map.html";
     }
 
-    private void writeAncestorsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
-        Map<Integer, List<Person>> ancestorsByGen = analyzer.getAncestorsByGeneration(targetPerson);
+    /** Open a collapsible top-level section whose clickable summary is the heading. */
+    private void openSection(PrintWriter writer, String heading, boolean open) {
+        writer.println("    <details class=\"section\"" + (open ? " open" : "") + ">");
+        writer.println("        <summary>" + heading + "</summary>");
+    }
 
-        if (ancestorsByGen.isEmpty()) {
-            writer.println("        <h2>ANCESTORS</h2>");
-            writer.println("        <p>No ancestors found.</p>");
-        } else {
-            int maxGen = ancestorsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
+    private void closeSection(PrintWriter writer) {
+        writer.println("    </details>");
+    }
 
-            // Which generations each ancestor appears in — a person reached via lines of
-            // different lengths (pedigree collapse) shows up in more than one.
-            Map<String, java.util.TreeSet<Integer>> personGens = new java.util.HashMap<>();
-            for (int gen = 1; gen <= maxGen; gen++) {
-                for (Person p : ancestorsByGen.getOrDefault(gen, new ArrayList<>())) {
-                    personGens.computeIfAbsent(p.getId(), k -> new java.util.TreeSet<>()).add(gen);
-                }
-            }
+    /** Open a collapsible generation/degree sub-accordion (nested inside a section). */
+    private void openGen(PrintWriter writer, String heading, boolean open) {
+        writer.println("        <details class=\"gen\"" + (open ? " open" : "") + ">");
+        writer.println("            <summary>" + heading + "</summary>");
+    }
 
-            // Collapse each generation up front so the section total (sum of the
-            // per-generation counts below) can be shown in the heading before the
-            // per-generation breakdown. A pedigree-collapse ancestor who appears in more
-            // than one generation is counted once per generation here, same as the
-            // per-generation subtotals it's summing — not deduplicated across generations.
-            LinkedHashMap<Integer, LinkedHashMap<Person, Integer>> collapsedByGen = new LinkedHashMap<>();
-            int total = 0;
-            for (int gen = 1; gen <= maxGen; gen++) {
-                List<Person> genList = ancestorsByGen.getOrDefault(gen, new ArrayList<>());
-                if (genList.isEmpty()) continue;
-                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
-                collapsedByGen.put(gen, collapsed);
-                total += collapsed.size();
-            }
-
-            writer.println("        <h2>ANCESTORS (" + total + ")</h2>");
-            for (Map.Entry<Integer, LinkedHashMap<Person, Integer>> genEntry : collapsedByGen.entrySet()) {
-                int gen = genEntry.getKey();
-                LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
-                writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + ancestorGenLabelPlural(gen) + " (" + collapsed.size() + ")</h3>");
-                for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
-                    String crossRef = ancestorCrossReference(gen, personGens.get(entry.getKey().getId()));
-                    writePersonEntry(writer, entry.getKey(), entry.getValue(), crossRef);
-                }
-                writer.println("        </div>");
-            }
-
-            writeNotableLineages(targetPerson, personGens, writer);
-        }
+    private void closeGen(PrintWriter writer) {
+        writer.println("        </details>");
     }
 
     /**
-     * Appendix to the ANCESTORS section: distinct notable ancestors (each once, closest
-     * relationship first) plus the deepest documented lines. Auto-detected from titles in
-     * the names — display-only, computed here, not stored.
+     * Write the (collapsible) ANCESTORS section. Returns the per-ancestor generation sets
+     * (person id -> the generations they appear in), which the Notable Ancestral Lines section
+     * reuses to place each notable ancestor; an empty map when there are no ancestors.
+     */
+    private Map<String, java.util.TreeSet<Integer>> writeAncestorsHtml(
+            FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer) {
+        Map<Integer, List<Person>> ancestorsByGen = analyzer.getAncestorsByGeneration(targetPerson);
+
+        if (ancestorsByGen.isEmpty()) {
+            openSection(writer, "ANCESTORS", false);
+            writer.println("        <p>No ancestors found.</p>");
+            closeSection(writer);
+            return new java.util.HashMap<>();
+        }
+        int maxGen = ancestorsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
+
+        // Which generations each ancestor appears in — a person reached via lines of
+        // different lengths (pedigree collapse) shows up in more than one.
+        Map<String, java.util.TreeSet<Integer>> personGens = new java.util.HashMap<>();
+        for (int gen = 1; gen <= maxGen; gen++) {
+            for (Person p : ancestorsByGen.getOrDefault(gen, new ArrayList<>())) {
+                personGens.computeIfAbsent(p.getId(), k -> new java.util.TreeSet<>()).add(gen);
+            }
+        }
+
+        // Collapse each generation up front so the section total (sum of the
+        // per-generation counts below) can be shown in the heading before the
+        // per-generation breakdown. A pedigree-collapse ancestor who appears in more
+        // than one generation is counted once per generation here, same as the
+        // per-generation subtotals it's summing — not deduplicated across generations.
+        LinkedHashMap<Integer, LinkedHashMap<Person, Integer>> collapsedByGen = new LinkedHashMap<>();
+        int total = 0;
+        for (int gen = 1; gen <= maxGen; gen++) {
+            List<Person> genList = ancestorsByGen.getOrDefault(gen, new ArrayList<>());
+            if (genList.isEmpty()) continue;
+            LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
+            collapsedByGen.put(gen, collapsed);
+            total += collapsed.size();
+        }
+
+        openSection(writer, "ANCESTORS (" + total + ")", false);
+        for (Map.Entry<Integer, LinkedHashMap<Person, Integer>> genEntry : collapsedByGen.entrySet()) {
+            int gen = genEntry.getKey();
+            LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
+            openGen(writer, ancestorGenLabelPlural(gen) + " (" + collapsed.size() + ")", false);
+            for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
+                String crossRef = ancestorCrossReference(gen, personGens.get(entry.getKey().getId()));
+                writePersonEntry(writer, entry.getKey(), entry.getValue(), crossRef);
+            }
+            closeGen(writer);
+        }
+        closeSection(writer);
+        return personGens;
+    }
+
+    /**
+     * The NOTABLE ANCESTRAL LINES section (its own top-level collapsible section, written right
+     * after ANCESTORS): distinct notable ancestors (each once, closest relationship first) plus
+     * the deepest documented lines. Auto-detected from titles in the names — display-only,
+     * computed here, not stored. Writes nothing at all when there is no notable content, so the
+     * caller doesn't need to guard against an empty section. {@code personGens} comes from
+     * {@link #writeAncestorsHtml}.
      */
     private void writeNotableLineages(Person targetPerson,
                                       Map<String, java.util.TreeSet<Integer>> personGens,
@@ -446,8 +487,7 @@ public class GedcomFamilyAnalyzer {
             return cmp != 0 ? cmp : a.getDisplayName().compareToIgnoreCase(b.getDisplayName());
         });
 
-        writer.println("        <div class=\"generation\">");
-        writer.println("            <h3>Notable Ancestral Lines</h3>");
+        openSection(writer, "NOTABLE ANCESTRAL LINES", false);
         writer.println("            <p style=\"color:#7f8c8d; font-style:italic;\">Auto-detected from titles / known families in the names, plus anyone with a Geni biography — a starting point, not individually verified.</p>");
 
         if (!notable.isEmpty()) {
@@ -520,7 +560,7 @@ public class GedcomFamilyAnalyzer {
                 writer.println("            </div>");
             }
         }
-        writer.println("        </div>");
+        closeSection(writer);
     }
 
     /** Person id -> bare Geni guid, or null if it isn't one (e.g. a "private-…" stub). */
@@ -612,47 +652,48 @@ public class GedcomFamilyAnalyzer {
         Map<Integer, List<Person>> descendantsByGen = analyzer.getDescendantsByGeneration(targetPerson);
 
         if (descendantsByGen.isEmpty()) {
-            writer.println("        <h2>DESCENDANTS</h2>");
+            openSection(writer, "DESCENDANTS", false);
             writer.println("        <p>No descendants found.</p>");
-        } else {
-            int maxGen = descendantsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
-
-            // Collapse each generation up front so the section total (sum of the
-            // per-generation counts below) can be shown in the heading first.
-            LinkedHashMap<Integer, LinkedHashMap<Person, Integer>> collapsedByGen = new LinkedHashMap<>();
-            int total = 0;
-            for (int gen = 1; gen <= maxGen; gen++) {
-                List<Person> genList = descendantsByGen.getOrDefault(gen, new ArrayList<>());
-                if (genList.isEmpty()) continue;
-                LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
-                collapsedByGen.put(gen, collapsed);
-                total += collapsed.size();
-            }
-
-            writer.println("        <h2>DESCENDANTS (" + total + ")</h2>");
-            for (Map.Entry<Integer, LinkedHashMap<Person, Integer>> genEntry : collapsedByGen.entrySet()) {
-                int gen = genEntry.getKey();
-                LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
-
-                String heading;
-                if (gen == 1) heading = "Children";
-                else if (gen == 2) heading = "Grandchildren";
-                else heading = "Great " + (gen - 2) + " Grandchildren";
-
-                writer.println("        <div class=\"generation\">");
-                writer.println("            <h3>" + heading + " (" + collapsed.size() + ")</h3>");
-                if (gen == 1) {
-                    // Children all share the target's own family (already named in the
-                    // info header above) — a per-family sub-heading would be redundant.
-                    for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
-                        writePersonEntry(writer, entry.getKey(), entry.getValue());
-                    }
-                } else {
-                    writeDescendantsGroupedByParentFamily(collapsed, writer, gedcomData);
-                }
-                writer.println("        </div>");
-            }
+            closeSection(writer);
+            return;
         }
+        int maxGen = descendantsByGen.keySet().stream().max(Integer::compareTo).orElse(1);
+
+        // Collapse each generation up front so the section total (sum of the
+        // per-generation counts below) can be shown in the heading first.
+        LinkedHashMap<Integer, LinkedHashMap<Person, Integer>> collapsedByGen = new LinkedHashMap<>();
+        int total = 0;
+        for (int gen = 1; gen <= maxGen; gen++) {
+            List<Person> genList = descendantsByGen.getOrDefault(gen, new ArrayList<>());
+            if (genList.isEmpty()) continue;
+            LinkedHashMap<Person, Integer> collapsed = collapseByPerson(genList);
+            collapsedByGen.put(gen, collapsed);
+            total += collapsed.size();
+        }
+
+        openSection(writer, "DESCENDANTS (" + total + ")", false);
+        for (Map.Entry<Integer, LinkedHashMap<Person, Integer>> genEntry : collapsedByGen.entrySet()) {
+            int gen = genEntry.getKey();
+            LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
+
+            String heading;
+            if (gen == 1) heading = "Children";
+            else if (gen == 2) heading = "Grandchildren";
+            else heading = "Great " + (gen - 2) + " Grandchildren";
+
+            openGen(writer, heading + " (" + collapsed.size() + ")", false);
+            if (gen == 1) {
+                // Children all share the target's own family (already named in the
+                // info header above) — a per-family sub-heading would be redundant.
+                for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
+                    writePersonEntry(writer, entry.getKey(), entry.getValue());
+                }
+            } else {
+                writeDescendantsGroupedByParentFamily(collapsed, writer, gedcomData);
+            }
+            closeGen(writer);
+        }
+        closeSection(writer);
     }
 
     /**
@@ -770,17 +811,18 @@ public class GedcomFamilyAnalyzer {
             grandTotal += totalCount;
         }
 
-        writer.println("        <h2>COUSINS (" + grandTotal + ")</h2>");
+        openSection(writer, "COUSINS (" + grandTotal + ")", false);
 
         if (collapsedByDegree.isEmpty()) {
             writer.println("        <p>No cousins found.</p>");
+            closeSection(writer);
             return;
         }
 
         for (Map.Entry<Integer, Map<String, LinkedHashMap<Person, Integer>>> degreeEntry : collapsedByDegree.entrySet()) {
             int degree = degreeEntry.getKey();
             String degreeText = degree == 1 ? "1st" : degree == 2 ? "2nd" : degree == 3 ? "3rd" : degree + "th";
-            writer.println("        <h3>" + degreeText + " Cousins (" + countByDegree.get(degree) + ")</h3>");
+            openGen(writer, degreeText + " Cousins (" + countByDegree.get(degree) + ")", false);
 
             for (Map.Entry<String, LinkedHashMap<Person, Integer>> entry : degreeEntry.getValue().entrySet()) {
                 String familyId = entry.getKey();
@@ -805,7 +847,9 @@ public class GedcomFamilyAnalyzer {
                 }
                 writer.println("        </div>");
             }
+            closeGen(writer);
         }
+        closeSection(writer);
     }
 
     private void displayAncestors(FamilyRelationshipAnalyzer analyzer, Person targetPerson) {

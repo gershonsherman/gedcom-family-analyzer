@@ -144,7 +144,16 @@ public class CousinMapWriter {
             "  });",
             "  return div;",
             "};",
-            "legend.addTo(map);"
+            "legend.addTo(map);",
+            // Recompute size + fit the first time a collapsed <details> section is opened (a map
+            // built in a hidden 0x0 container otherwise renders broken). See AncestorMapWriter.
+            "var _host = document.getElementById('" + divId + "').closest('details');",
+            "if (_host && !_host.open) { _host.addEventListener('toggle', function _fit() {",
+            "  if (!_host.open) return;",
+            "  map.invalidateSize();",
+            "  if (bounds.length) { map.fitBounds(bounds, { padding: [30, 30] }); } else { map.setView([30, 10], 2); }",
+            "  _host.removeEventListener('toggle', _fit);",
+            "}); }"
         );
     }
 }

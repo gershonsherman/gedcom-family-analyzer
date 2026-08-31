@@ -178,7 +178,17 @@ public class AncestorMapWriter {
             "  }",
             "  return div;",
             "};",
-            "legend.addTo(map);"
+            "legend.addTo(map);",
+            // If this map sits inside a collapsed <details> section, it was initialized with a
+            // 0x0 container, so its size and fitBounds zoom are wrong. Recompute both the first
+            // time the section is opened, then unhook so later toggles keep the user's own pan/zoom.
+            "var _host = document.getElementById('" + divId + "').closest('details');",
+            "if (_host && !_host.open) { _host.addEventListener('toggle', function _fit() {",
+            "  if (!_host.open) return;",
+            "  map.invalidateSize();",
+            "  if (bounds.length) { map.fitBounds(bounds, { padding: [30, 30] }); } else { map.setView([30, 10], 2); }",
+            "  _host.removeEventListener('toggle', _fit);",
+            "}); }"
         );
     }
 }

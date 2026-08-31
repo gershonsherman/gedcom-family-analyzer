@@ -47,6 +47,24 @@ Main analyzer:
   shown underneath, not a distinct-people count, so a pedigree-collapse ancestor appearing
   in more than one generation is counted once per generation, same as the sub-counts always
   did.
+  - **Collapsible navigation.** The report is built from nested `<details>`: every main
+    section is a `<details class="section">` whose `<summary>` is the heading (ANCESTOR MAP,
+    ANCESTORS, NOTABLE ANCESTRAL LINES — now its own top-level section, DESCENDANT MAP,
+    DESCENDANTS, SIBLINGS, COUSIN MAP, COUSINS), and each generation/degree under
+    Ancestors/Descendants/Cousins is a nested `<details class="gen">`. Helpers
+    `openSection`/`closeSection`/`openGen`/`closeGen` emit them; a summary is styled to look like
+    the old `<h2>`/`<h3>` (the plain `.generation` div/`<h3>` path is gone) with a rotating ▸
+    marker. **Everything starts collapsed** (the `open` arg to those helpers is `false`
+    everywhere) — flip an `openSection(...)`/`openGen(...)` call's last arg to `true` to have a
+    section start expanded. `writeAncestorsHtml` returns the per-ancestor generation map so the
+    notable section (written right after it in `main`, not nested inside ANCESTORS anymore) can
+    reuse it; `writeNotableLineages` writes nothing when there's no notable content, so it never
+    leaves an empty section. **Leaflet-in-collapsed-`<details>` gotcha:** a map initialized in a
+    hidden 0×0 container renders broken, so `AncestorMapWriter`/`CousinMapWriter` each append a
+    one-shot `toggle` handler (`getElementById(divId).closest('details')`) that calls
+    `invalidateSize()` + re-`fitBounds` the first time its section opens, then unhooks so later
+    toggles keep the user's pan/zoom. Harmless when a section is open by default or when the map
+    isn't inside a `<details>` (standalone map files → `closest` is null).
 - `GedcomWriter` — writes a `GedcomData` back to a single `.ged`.
 
 ### Geni API fetcher subsystem
