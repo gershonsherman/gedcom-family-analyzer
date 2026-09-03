@@ -167,6 +167,12 @@ public class GedcomFamilyAnalyzer {
             writer.println("        .person-name { font-weight: bold; color: #2c3e50;"
                     + " unicode-bidi: isolate; }");
             writer.println("        .person-id { color: #7f8c8d; font-family: monospace; }");
+            // Inline lineage context in the same secondary grey as the Geni id. Arrows follow page
+            // direction: ↑ = toward the target (up the list), ↓ = further away (down the list) — so
+            // ancestors show ↑ children ↓ parents, descendants show ↓ children. Each name is
+            // bidi-isolated so a Hebrew name can't reorder the arrows/commas.
+            writer.println("        .lineage { color: #7f8c8d; font-size: 13px; }");
+            writer.println("        .lineage .nm { unicode-bidi: isolate; }");
             writer.println("        .dup-count { color: #c0392b; font-weight: bold; }");
             writer.println("        .cross-ref { color: #8e44ad; font-style: italic; font-size: 13px; }");
             writer.println("        .life-dates { color: #27ae60; font-style: italic; margin-left: 20px; }");
@@ -439,8 +445,12 @@ public class GedcomFamilyAnalyzer {
             LinkedHashMap<Person, Integer> collapsed = genEntry.getValue();
             openGen(writer, ancestorGenLabelPlural(gen) + " (" + collapsed.size() + ")", false);
             for (Map.Entry<Person, Integer> entry : collapsed.entrySet()) {
-                String crossRef = ancestorCrossReference(gen, personGens.get(entry.getKey().getId()));
-                writePersonEntry(writer, entry.getKey(), entry.getValue(), crossRef);
+                Person a = entry.getKey();
+                String crossRef = ancestorCrossReference(gen, personGens.get(a.getId()));
+                // Grandparents and beyond (gen >= 2): ↑ children (toward you), ↓ parents (further back).
+                String up = gen >= 2 ? joinNames(a.getChildren()) : "";
+                String down = gen >= 2 ? joinNames(a.getParents()) : "";
+                writePersonEntry(writer, a, entry.getValue(), crossRef, up, down);
             }
             closeGen(writer);
         }
@@ -729,7 +739,10 @@ public class GedcomFamilyAnalyzer {
             writer.println("            <strong style=\"color: #8e44ad; font-size: 16px;\">Children of "
                     + familyDisplayName + " (" + members.size() + "):</strong>");
             for (Map.Entry<Person, Integer> memberEntry : members.entrySet()) {
-                writePersonEntry(writer, memberEntry.getKey(), memberEntry.getValue());
+                // Grandchildren and beyond are grouped here (gen >= 2); their parents are already
+                // named in the "Children of X & Y" header, so show ↓ their own children (next gen).
+                Person d = memberEntry.getKey();
+                writePersonEntry(writer, d, memberEntry.getValue(), "", "", joinNames(d.getChildren()));
             }
             writer.println("        </div>");
         }
@@ -768,25 +781,70 @@ public class GedcomFamilyAnalyzer {
 
     /** Write a single person entry, appending a "(Nx)" marker when count > 1. */
     private void writePersonEntry(PrintWriter writer, Person person, int count) {
-        writePersonEntry(writer, person, count, "");
+        writePersonEntry(writer, person, count, "", "", "");
+    }
+
+    private void writePersonEntry(PrintWriter writer, Person person, int count, String crossRef) {
+        writePersonEntry(writer, person, count, crossRef, "", "");
     }
 
     /**
-     * Write a single person entry, with an optional "(Nx)" marker and an optional
-     * cross-reference note (e.g. "also 19th great-grandparent") for collapsed ancestors.
+     * Write a single person entry: name, then id, then an optional inline lineage note
+     * "(↑ upNames, ↓ downNames)" — plus an optional "(Nx)" marker and cross-reference on the name.
+     * The arrows follow list/page direction (↑ = toward the target / up the page, ↓ = further
+     * away / down the page), so the caller passes whichever relationship belongs on each side —
+     * ancestors: ↑ children, ↓ parents; descendants: ↓ children. {@code upNames}/{@code downNames}
+     * are pre-formatted name lists (see {@link #joinNames}); either may be empty.
      */
-    private void writePersonEntry(PrintWriter writer, Person person, int count, String crossRef) {
+    private void writePersonEntry(PrintWriter writer, Person person, int count, String crossRef,
+                                  String upNames, String downNames) {
         String dupMarker = count > 1 ? " <span class=\"dup-count\">(" + count + "x)</span>" : "";
         String crossRefSpan = (crossRef != null && !crossRef.isEmpty())
                 ? " <span class=\"cross-ref\">— " + crossRef + "</span>" : "";
+        String lineage = lineageContext(upNames, downNames);
         writer.println("            <div class=\"person\">");
         writer.println("                <span class=\"person-name\">" + person.getDisplayName() + "</span>"
-                + dupMarker + crossRefSpan);
-        writer.println("                <span class=\"person-id\"> (" + person.getId() + ")</span>");
+                + dupMarker + crossRefSpan
+                + " <span class=\"person-id\">(" + person.getId() + ")</span>"
+                + lineage);
         if (!person.getLifeDates().isEmpty()) {
             writer.println("                <div class=\"life-dates\">" + person.getLifeDates() + "</div>");
         }
         writer.println("            </div>");
+    }
+
+    /**
+     * Inline "(↑ upNames, ↓ downNames)" context in the secondary grey, or "" when both are empty.
+     * The name lists are already formatted by {@link #joinNames}; the arrows follow page
+     * direction, not tree direction — the caller decides which relationship goes on each side.
+     */
+    private String lineageContext(String upNames, String downNames) {
+        StringBuilder parts = new StringBuilder();
+        if (upNames != null && !upNames.isEmpty()) {
+            parts.append("&uarr; ").append(upNames);
+        }
+        if (downNames != null && !downNames.isEmpty()) {
+            if (parts.length() > 0) parts.append(", ");
+            parts.append("&darr; ").append(downNames);
+        }
+        return parts.length() == 0 ? "" : " <span class=\"lineage\">(" + parts + ")</span>";
+    }
+
+    /** Comma-joined, HTML-escaped, bidi-isolated display names; skips blank/placeholder names. */
+    private String joinNames(List<Person> people) {
+        if (people == null || people.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Person p : people) {
+            String name = p.getDisplayName();
+            if (name == null || name.trim().isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("<span class=\"nm\">").append(escapeHtml(name.trim())).append("</span>");
+        }
+        return sb.toString();
     }
 
     private void writeCousinsHtml(FamilyRelationshipAnalyzer analyzer, Person targetPerson, PrintWriter writer, GedcomData gedcomData) {

@@ -65,6 +65,17 @@ Main analyzer:
     `invalidateSize()` + re-`fitBounds` the first time its section opens, then unhooks so later
     toggles keep the user's pan/zoom. Harmless when a section is open by default or when the map
     isn't inside a `<details>` (standalone map files → `closest` is null).
+  - **Inline lineage context.** Each person entry renders as `name (id) (↑ … , ↓ …)` — the id
+    inline right after the name, then a grey `.lineage` note. Arrows follow **page/list
+    direction**, not tree direction: ↑ = toward the target (up the list, the closer generation),
+    ↓ = further away (down the list). So **ancestors** (Grandparents+, gen ≥ 2) show
+    `↑ children, ↓ parents`; **descendants** (Grandchildren+, gen ≥ 2) show `↓ children` only
+    (their parents are already in the "Children of X & Y" group header). `writePersonEntry(…,
+    crossRef, upNames, downNames)` takes pre-formatted name lists from `joinNames` (which
+    HTML-escapes and wraps each name in a bidi-isolated `.nm` span so a Hebrew name can't reorder
+    the arrows/commas); `lineageContext` assembles the note. Parents/children come straight off
+    `Person.getParents()`/`getChildren()` (already resolved), so no GedcomData handle is needed.
+    Gen-1 rows (Parents / Children), Siblings and Cousins get no lineage note.
 - `GedcomWriter` — writes a `GedcomData` back to a single `.ged`.
 
 ### Geni API fetcher subsystem
