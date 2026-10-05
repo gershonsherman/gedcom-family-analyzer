@@ -57,3 +57,6 @@ notable-ancestors.tsv
 
 # Claude Code local tool state
 .claude/
+
+# Local VS Code launcher (has personal Drive path) — not for the public repo
+/gedcode

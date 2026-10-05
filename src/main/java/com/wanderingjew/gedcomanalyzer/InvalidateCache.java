@@ -8,7 +8,9 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -63,23 +65,42 @@ public class InvalidateCache {
         // targets on first match — a guid can have more than one matching file (e.g. an
         // orphaned file from a past CACHE_VERSION bump alongside the current one), and
         // all of them need deleting, not just the first one found.
+        // Collect the matching filenames first so we can report progress. This is a name-only
+        // directory listing — cheap even on a slow cloud mount; the slow part is reading each
+        // file's contents below (every file must be opened because cache files are named by
+        // Geni's internal id, not the guid, so the focus guid has to be read out of each one).
+        List<Path> files = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(cacheDir, "*.v*.json")) {
+            for (Path p : stream) {
+                files.add(p);
+            }
+        }
+        int total = files.size();
+        System.out.println("Scanning " + total + " cache file(s) for " + targets.size()
+                + " guid(s)... (reads every file off disk, so this can take a while on a cloud mount)");
+
         Set<String> found = new HashSet<>();
         int deleted = 0;
-        try (DirectoryStream<Path> files = Files.newDirectoryStream(cacheDir, "*.v*.json")) {
-            for (Path file : files) {
-                String guid;
-                try {
-                    JsonNode focus = mapper.readTree(file.toFile()).get("focus");
-                    guid = (focus == null) ? null : focus.path("guid").asText(null);
-                } catch (IOException e) {
-                    continue; // skip unreadable / partially-written files
-                }
-                if (guid != null && targets.contains(guid)) {
-                    Files.delete(file);
-                    System.out.println("Deleted " + file.getFileName() + " (guid " + guid + ")");
-                    found.add(guid);
-                    deleted++;
-                }
+        int step = Math.max(1, total / 20); // report roughly every 5%
+        for (int i = 0; i < total; i++) {
+            Path file = files.get(i);
+            String guid;
+            try {
+                JsonNode focus = mapper.readTree(file.toFile()).get("focus");
+                guid = (focus == null) ? null : focus.path("guid").asText(null);
+            } catch (IOException e) {
+                guid = null; // skip unreadable / partially-written files
+            }
+            if (guid != null && targets.contains(guid)) {
+                Files.delete(file);
+                System.out.println("  Deleted " + file.getFileName() + " (guid " + guid + ")");
+                found.add(guid);
+                deleted++;
+            }
+            int done = i + 1;
+            if (done % step == 0 || done == total) {
+                System.out.println("  ...scanned " + done + "/" + total + " (" + (done * 100 / total)
+                        + "%), " + deleted + " deleted");
             }
         }
 
