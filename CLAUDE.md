@@ -153,10 +153,14 @@ Main analyzer:
   (`<cache-dir>/.guid-index.tsv`, one `<filename>\t<focusGuid>` line per file): `reconcile()`
   reads focus.guid only out of files **not already indexed** and drops vanished ones, so the
   first run per cache dir does a one-time full scan (with `...indexed N/total (X%)` progress),
-  and every run after is effectively instant (it reads just whatever a later fetch added). The
-  index lives inside the git-ignored cache dir; delete it to force a rebuild. Nothing else
-  maintains it yet — `GeniClient` could append to it on each cache write to keep even the
-  first-after-a-big-fetch run instant, deferred as not worth touching the fetch hot path.
+  and every run after is effectively instant (it reads just whatever a later fetch added).
+  **Fast path:** if the already-saved index covers every target guid, it deletes straight away
+  and skips `reconcile()` entirely — no directory listing, no file reads at all ("All target
+  guid(s) already in the index — no scan needed."). It only reconciles (which must scan to read
+  files a later fetch added) when a target isn't in the index yet. The index lives inside the
+  git-ignored cache dir; delete it to force a rebuild. Nothing else maintains it yet —
+  `GeniClient` could append to it on each cache write to keep even the first-after-a-big-fetch
+  run instant, deferred as not worth touching the fetch hot path.
 - `LineageAnalysis` — the report-wired lineage computation (instance-based, built from a
   target's `getParents()` graph, no GedcomData handle). Powers the **"Notable Ancestral
   Lines"** appendix at the end of the ANCESTORS section: distinct title-flagged ancestors

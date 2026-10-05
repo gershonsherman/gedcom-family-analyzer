@@ -59,15 +59,30 @@ public class InvalidateCache {
         System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
 
         ObjectMapper mapper = new ObjectMapper();
-        // Use the guid->filename index so we don't open every cache file. reconcile() reads only
-        // files not already indexed (a one-time full scan on first ever run, then just whatever a
-        // later fetch added), so the lookup+delete below is effectively instant on repeat runs.
-        // It still finds ALL files for a guid, not just the first — a guid can map to more than one
-        // file (e.g. an orphan left by a past CACHE_VERSION bump), and every one must be deleted.
+        // Use the guid->filename index so we don't open every cache file (files are named by Geni's
+        // internal id, not the guid, so without an index every file must be read to check its
+        // focus.guid). A guid can map to more than one file (e.g. an orphan from a past
+        // CACHE_VERSION bump), so we collect ALL of a guid's files, not just the first.
         GuidCacheIndex index = new GuidCacheIndex(cacheDir);
         index.load();
-        index.reconcile(mapper);
         Map<String, List<String>> byGuid = index.guidToFiles();
+
+        // Fast path: if the already-saved index covers every target, delete straight away and skip
+        // reconcile entirely — no directory listing, no file reads. Only reconcile (which reads any
+        // files a later fetch added, so it has to scan) when a target isn't in the index yet.
+        boolean allKnown = true;
+        for (String target : targets) {
+            if (!byGuid.containsKey(target)) {
+                allKnown = false;
+                break;
+            }
+        }
+        if (!allKnown) {
+            index.reconcile(mapper);
+            byGuid = index.guidToFiles();
+        } else {
+            System.out.println("All target guid(s) already in the index — no scan needed.");
+        }
 
         int deleted = 0;
         boolean indexChanged = false;
@@ -80,11 +95,16 @@ public class InvalidateCache {
             }
             for (String filename : filenames) {
                 try {
-                    Files.deleteIfExists(cacheDir.resolve(filename));
-                    index.forget(filename);
+                    boolean existed = Files.deleteIfExists(cacheDir.resolve(filename));
+                    index.forget(filename); // drop the entry either way (file is gone now)
                     indexChanged = true;
-                    System.out.println("Deleted " + filename + " (guid " + target + ")");
-                    deleted++;
+                    if (existed) {
+                        System.out.println("Deleted " + filename + " (guid " + target + ")");
+                        deleted++;
+                    } else {
+                        System.out.println("Already gone: " + filename + " (guid " + target
+                                + ") — removed stale index entry");
+                    }
                 } catch (IOException e) {
                     System.err.println("Couldn't delete " + filename + ": " + e.getMessage());
                 }
