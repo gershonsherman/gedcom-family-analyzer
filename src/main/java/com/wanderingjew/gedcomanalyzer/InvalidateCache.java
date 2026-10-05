@@ -1,16 +1,14 @@
 package com.wanderingjew.gedcomanalyzer;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -61,54 +59,39 @@ public class InvalidateCache {
         System.out.println("Cache directory: " + cacheDir.toAbsolutePath());
 
         ObjectMapper mapper = new ObjectMapper();
-        // Track which target guids were actually matched, rather than removing from
-        // targets on first match — a guid can have more than one matching file (e.g. an
-        // orphaned file from a past CACHE_VERSION bump alongside the current one), and
-        // all of them need deleting, not just the first one found.
-        // Collect the matching filenames first so we can report progress. This is a name-only
-        // directory listing — cheap even on a slow cloud mount; the slow part is reading each
-        // file's contents below (every file must be opened because cache files are named by
-        // Geni's internal id, not the guid, so the focus guid has to be read out of each one).
-        List<Path> files = new ArrayList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(cacheDir, "*.v*.json")) {
-            for (Path p : stream) {
-                files.add(p);
-            }
-        }
-        int total = files.size();
-        System.out.println("Scanning " + total + " cache file(s) for " + targets.size()
-                + " guid(s)... (reads every file off disk, so this can take a while on a cloud mount)");
+        // Use the guid->filename index so we don't open every cache file. reconcile() reads only
+        // files not already indexed (a one-time full scan on first ever run, then just whatever a
+        // later fetch added), so the lookup+delete below is effectively instant on repeat runs.
+        // It still finds ALL files for a guid, not just the first — a guid can map to more than one
+        // file (e.g. an orphan left by a past CACHE_VERSION bump), and every one must be deleted.
+        GuidCacheIndex index = new GuidCacheIndex(cacheDir);
+        index.load();
+        index.reconcile(mapper);
+        Map<String, List<String>> byGuid = index.guidToFiles();
 
-        Set<String> found = new HashSet<>();
         int deleted = 0;
-        int step = Math.max(1, total / 20); // report roughly every 5%
-        for (int i = 0; i < total; i++) {
-            Path file = files.get(i);
-            String guid;
-            try {
-                JsonNode focus = mapper.readTree(file.toFile()).get("focus");
-                guid = (focus == null) ? null : focus.path("guid").asText(null);
-            } catch (IOException e) {
-                guid = null; // skip unreadable / partially-written files
-            }
-            if (guid != null && targets.contains(guid)) {
-                Files.delete(file);
-                System.out.println("  Deleted " + file.getFileName() + " (guid " + guid + ")");
-                found.add(guid);
-                deleted++;
-            }
-            int done = i + 1;
-            if (done % step == 0 || done == total) {
-                System.out.println("  ...scanned " + done + "/" + total + " (" + (done * 100 / total)
-                        + "%), " + deleted + " deleted");
-            }
-        }
-
+        boolean indexChanged = false;
         for (String target : targets) {
-            if (!found.contains(target)) {
+            List<String> filenames = byGuid.get(target);
+            if (filenames == null || filenames.isEmpty()) {
                 System.out.println("No cache file found for guid " + target
                         + " (not fetched yet, or already removed).");
+                continue;
             }
+            for (String filename : filenames) {
+                try {
+                    Files.deleteIfExists(cacheDir.resolve(filename));
+                    index.forget(filename);
+                    indexChanged = true;
+                    System.out.println("Deleted " + filename + " (guid " + target + ")");
+                    deleted++;
+                } catch (IOException e) {
+                    System.err.println("Couldn't delete " + filename + ": " + e.getMessage());
+                }
+            }
+        }
+        if (indexChanged) {
+            index.save(); // keep the index consistent with what we just removed
         }
         System.out.println("Deleted " + deleted + " cache file(s). Re-run GeniFetch with a valid token to refetch.");
     }

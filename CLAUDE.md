@@ -147,7 +147,16 @@ Main analyzer:
   new child herself was never cached, so there's nothing to invalidate for her). Cache
   files are keyed by Geni's short internal `id`, not the long public guid — to find a
   specific file, `grep -rl '"guid":"<guid>"'` the cache dir rather than guessing the
-  filename.
+  filename. **Speed:** because of that id-vs-guid mismatch, finding a guid's file otherwise
+  means opening and parsing *every* `*.v*.json` — brutal on the cloud-mounted cache (~4,300
+  files ≈ tens of minutes at ~0.8 files/sec cold). So it uses `GuidCacheIndex`
+  (`<cache-dir>/.guid-index.tsv`, one `<filename>\t<focusGuid>` line per file): `reconcile()`
+  reads focus.guid only out of files **not already indexed** and drops vanished ones, so the
+  first run per cache dir does a one-time full scan (with `...indexed N/total (X%)` progress),
+  and every run after is effectively instant (it reads just whatever a later fetch added). The
+  index lives inside the git-ignored cache dir; delete it to force a rebuild. Nothing else
+  maintains it yet — `GeniClient` could append to it on each cache write to keep even the
+  first-after-a-big-fetch run instant, deferred as not worth touching the fetch hot path.
 - `LineageAnalysis` — the report-wired lineage computation (instance-based, built from a
   target's `getParents()` graph, no GedcomData handle). Powers the **"Notable Ancestral
   Lines"** appendix at the end of the ANCESTORS section: distinct title-flagged ancestors
