@@ -125,14 +125,26 @@ Main analyzer:
   `<start-guid> <max-gens|up-gens> <out.ged> [cache-dir]`.
 - `BuildGedcom` / `BuildCousinGedcom` / `AncestorMap` — OFFLINE cache-only CLIs (no token),
   same args shape; safe to run while a `GeniFetch`/`GeniCousinFetch` is going.
-- `AncestorMapWriter` — Leaflet/OSM map, teardrop pins coloured by generation (continuous
+- `AncestorMapWriter` — Leaflet map, teardrop pins coloured by generation (continuous
   rainbow, capped at a configurable generation — default 40 for the ancestor map, 8 for the
   descendant map, since descendant trees are realistically much shallower), compact legend,
   title. Popup shows current/death/birth location depending on `MapPoint.locationType`.
   Shared by the ancestor map (`MapPoint.fromPerson`: death > birth priority — ancestors are
   overwhelmingly deceased) and the descendant map (`MapPoint.fromPersonPreferCurrent`:
-  current > death > birth — descendants, especially recent generations, are usually alive).
+  current > death > birth — descendants, especially recent generations, are usually alive) —
+  so there are only two map-writer classes (this one + `CousinMapWriter`), not three; the
+  descendant map has no class of its own.
   (Won't render as a Claude Artifact — CSP blocks external tiles/CDN; open the HTML locally.)
+  - **Tile provider (2026-10-05): Esri World Street Map**
+    (`server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}` —
+    note `{z}/{y}/{x}` row-before-col order, no `{s}` subdomain), set in BOTH `AncestorMapWriter`
+    and `CousinMapWriter`. We moved OFF `tile.openstreetmap.org`: OSM now **403-blocks** tile
+    requests that don't follow its usage policy, and a report opened as a local `file://` sends no
+    Referer and a generic User-Agent (which can't be set on browser `<img>` tile requests), so it
+    gets blocked. CARTO was tried next but now serves an "API key required" watermark. Esri's
+    basemap tiles are keyless and don't Referer-block, verified returning real tiles. **Existing
+    generated HTML has the old URL baked in** — fix old reports with a find-and-replace of the tile
+    URL (a per-file `perl -i` loop over `*.html`; done once on 2026-10-05), or just regenerate.
 - `CousinMapWriter` — same Leaflet approach, but a **fixed 6-colour scale** by relationship
   degree (red = sibling, orange → purple = 1st → 5th cousin) instead of a continuous
   generation scale, also using `fromPersonPreferCurrent`.

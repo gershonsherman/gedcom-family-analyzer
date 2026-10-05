@@ -144,8 +144,12 @@ public class AncestorMapWriter {
             "  return L.divIcon({ html: svg, className: 'pin', iconSize: [24, 36], iconAnchor: [12, 36], popupAnchor: [0, -32] });",
             "}",
             "const map = L.map('" + divId + "');",
-            "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {",
-            "  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'",
+            // Esri World Street Map tiles — keyless and NOT Referer/usage-policy blocked, unlike
+            // tile.openstreetmap.org (403s a local file:// report for not following OSM's tile
+            // policy) and CARTO (now serves an "API key required" watermark). Esri's tile path is
+            // {z}/{y}/{x} (row before col) and has no {s} subdomain.
+            "L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {",
+            "  maxZoom: 19, attribution: 'Tiles &copy; Esri'",
             "}).addTo(map);",
             "const seen = {};",
             "const bounds = [];",
